@@ -30,11 +30,15 @@ def get_forutils():
         try:
             print("forutils not found, attempting to install using git...")
             os.chdir("..")
-            fbranch = os.getenv("FORUTILSBRANCH", "1.0.3" if os.environ.get("CONDA_BUILD") else "master")
+            fbranch = os.getenv(
+                "FORUTILSBRANCH", "1.0.3" if os.environ.get("CONDA_BUILD") else "master"
+            )
             try:
                 if (
                     subprocess.call(
-                        "git clone --branch %s --depth=1 https://github.com/cmbant/forutils" % fbranch, shell=True
+                        "git clone --branch %s --depth=1 https://github.com/cmbant/forutils"
+                        % fbranch,
+                        shell=True,
                     )
                     == 0
                 ):
@@ -60,8 +64,17 @@ def get_forutils():
                 try:
                     try:
                         os.chdir("..")
-                        print("forutils directory found but no Makefile. Attempting to clone submodule...")
-                        if subprocess.call("git submodule update --init --recursive", shell=True, cwd=main_dir) != 0:
+                        print(
+                            "forutils directory found but no Makefile. Attempting to clone submodule..."
+                        )
+                        if (
+                            subprocess.call(
+                                "git submodule update --init --recursive",
+                                shell=True,
+                                cwd=main_dir,
+                            )
+                            != 0
+                        ):
                             raise Exception()
                     finally:
                         os.chdir("fortran")
@@ -99,7 +112,9 @@ def make_library(cluster=False):
     if _compile.is_windows or not _compile.check_ifort():
         ok, gfortran_version = _compile.check_gfortran(msg=not _compile.is_windows)
         if ok and "8.2.0" in gfortran_version:
-            print("WARNING: gfortran 8.2.0 may be buggy and give unreliable results or crashes, upgrade gfortran.")
+            print(
+                "WARNING: gfortran 8.2.0 may be buggy and give unreliable results or crashes, upgrade gfortran."
+            )
     if _compile.is_windows:
         COMPILER = "gfortran"
         FFLAGS = "-shared -static -cpp -fopenmp -O3 -fmax-errors=4"
@@ -112,13 +127,21 @@ def make_library(cluster=False):
                 "WARNING: gfortran %s or higher not in path (if you just installed "
                 "you may need to log off and on again)." % _compile.gfortran_min
             )
-            print("        You can get a Windows gfortran build from https://sourceforge.net/projects/mingw-w64/files/")
+            print(
+                "        You can get a Windows gfortran build from https://sourceforge.net/projects/mingw-w64/files/"
+            )
             print("        - go to Files, and download MinGW-W64 Online Installer.")
-            print("        Alternatively newer versions at https://github.com/niXman/mingw-builds-binaries")
+            print(
+                "        Alternatively newer versions at https://github.com/niXman/mingw-builds-binaries"
+            )
             if _compile.is_32_bit:
-                raise OSError("No 32bit Windows DLL provided, you need to build or use 64 bit python")
+                raise OSError(
+                    "No 32bit Windows DLL provided, you need to build or use 64 bit python"
+                )
             else:
-                print("Using pre-compiled binary instead - any local changes will be ignored...")
+                print(
+                    "Using pre-compiled binary instead - any local changes will be ignored..."
+                )
         else:
             fpath = get_forutils()
             makefile = _compile.makefile_dict("Makefile_main")
@@ -154,19 +177,42 @@ def make_library(cluster=False):
                 modified = new_compiler or not os.path.exists(fout)
                 if not modified:
                     o_time = os.path.getmtime(fout)
-                    modified = o_time < os.path.getmtime(source + ".f90") or not os.path.exists(outroot + ".d")
+                    modified = o_time < os.path.getmtime(
+                        source + ".f90"
+                    ) or not os.path.exists(outroot + ".d")
                     if not modified:
                         with open(outroot + ".d") as f:
-                            for dependence in " ".join(f.readlines()).replace("\\\n", "").split(":")[1].strip().split():
-                                if os.path.getmtime(dependence) > o_time:
-                                    modified = True
-                                    break
+                            # Parse dependency file properly, handling line continuations
+                            dep_content = " ".join(f.readlines()).replace("\\\n", "")
+                            if ":" in dep_content:
+                                deps_part = dep_content.split(":", 1)[1].strip()
+                                for dependence in deps_part.split():
+                                    # Skip empty strings and backslashes from line continuations
+                                    dependence = dependence.strip()
+                                    if (
+                                        dependence
+                                        and dependence != "\\"
+                                        and os.path.exists(dependence)
+                                    ):
+                                        if os.path.getmtime(dependence) > o_time:
+                                            modified = True
+                                            break
 
                 if modified:
                     need_compile = True
-                    cmd = COMPILER + " " + FFLAGS + " " + source + f".f90 -MMD -c -o {fout} -J{tmpdir}"
+                    cmd = (
+                        COMPILER
+                        + " "
+                        + FFLAGS
+                        + " "
+                        + source
+                        + f".f90 -MMD -c -o {fout} -J{tmpdir}"
+                    )
                     print(cmd)
-                    if subprocess.call(cmd, shell=True, env=_compile.compiler_environ) != 0:
+                    if (
+                        subprocess.call(cmd, shell=True, env=_compile.compiler_environ)
+                        != 0
+                    ):
                         raise OSError("Compilation failed")
                 elif not need_compile and dll_time < o_time:
                     need_compile = True
@@ -177,9 +223,18 @@ def make_library(cluster=False):
                     try:
                         os.remove(lib_file)
                     except OSError:
-                        raise OSError("dll file in use. Stop python codes and notebook kernels that are using camb.")
+                        raise OSError(
+                            "dll file in use. Stop python codes and notebook kernels that are using camb."
+                        )
                 print("Compiling sources...")
-                cmd = COMPILER + " " + FFLAGS + " " + " ".join(ofiles) + f" -o {lib_file} -J{tmpdir}"
+                cmd = (
+                    COMPILER
+                    + " "
+                    + FFLAGS
+                    + " "
+                    + " ".join(ofiles)
+                    + f" -o {lib_file} -J{tmpdir}"
+                )
                 print(cmd)
                 if subprocess.call(cmd, shell=True, env=_compile.compiler_environ) != 0:
                     raise OSError("Compilation failed")
@@ -257,7 +312,9 @@ class CleanLibrary(MakeLibrary):
         if _compile.is_windows:
             clean_dir(os.path.join(file_dir, "fortran", "WinDLL"), rmdir=True)
         else:
-            subprocess.call("make clean", shell=True, cwd=os.path.join(file_dir, "fortran"))
+            subprocess.call(
+                "make clean", shell=True, cwd=os.path.join(file_dir, "fortran")
+            )
 
 
 class BDistWheelNonPure(_bdist_wheel):

@@ -9,6 +9,7 @@
     use Recombination, only : TRecFast
     use lensing
     use DarkEnergyFluid
+    use DarkEnergyComposite
     implicit none
     contains
 
