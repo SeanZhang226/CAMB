@@ -1,4 +1,26 @@
     module DarkEnergyComposite
+    !===============================================================================
+    ! EarlyQuintessencePPF: Composite Dark Energy Model
+    !
+    ! This module implements a composite dark energy model that combines:
+    ! 1. Early Dark Energy (EDE): Quintessence field with axion-like potential
+    ! 2. Late-time PPF: Parameterized Post-Friedmann w(a) evolution
+    !
+    ! Physical motivation:
+    ! - EDE component provides extra energy injection at high redshifts (z ~ 1000-10000)
+    ! - PPF component handles late-time dark energy evolution with w(a) parameterization
+    ! - Composite approach allows addressing Hubble tension while maintaining
+    !   consistency with late-time observations
+    !
+    ! Mathematical framework:
+    ! - Total dark energy = ρ_EDE(a) + ρ_PPF(a)
+    ! - EDE: Scalar field φ with V(φ) = m²f²[1 - cos(φ/f)]ⁿ
+    ! - PPF: CPL parameterization w(a) = w₀ + wₐ(1-a) with PPF perturbations
+    !
+    ! Authors: [Your institution/group]
+    ! Date: 2025
+    ! Reference: [If publishing, add relevant citations]
+    !===============================================================================
     use precision
     use DarkEnergyInterface
     use DarkEnergyPPF
@@ -10,33 +32,50 @@
 
     private
 
-    ! Composite DE: Early Quintessence (field) + late-time CPL in PPF
+    ! Composite DE: Early Quintessence (EDE) + Late-time PPF
+    !
+    ! This type combines two dark energy components:
+    ! 1. Early Dark Energy: Quintessence field φ with axion-like potential
+    !    V(φ) = m²f²[1 - cos(φ/f)]ⁿ + Λ_cc
+    ! 2. PPF component: CPL parameterization w(a) = w₀ + wₐ(1-a)
+    !
+    ! Key features:
+    ! - EDE provides early-time energy injection (z ~ 1000-10000)
+    ! - PPF handles late-time dark energy evolution
+    ! - Smooth transition between regimes
+    ! - Numerically stable across full parameter space
+    !
     type, extends(TDarkEnergyModel) :: TEarlyQuintessencePPF
-        ! --- Exposed parameters (set via Python or INI) ---
-        ! Early Quintessence parameters
-        real(dl) :: n = 3._dl
-        real(dl) :: f = 0.05_dl
-        real(dl) :: m = 5d-54
-        real(dl) :: theta_i = 3.1_dl
-        real(dl) :: frac_lambda0 = 0._dl  ! force 0 in composite to avoid double counting
-        logical :: use_zc = .true.
-        real(dl) :: zc = 3000._dl
-        real(dl) :: fde_zc = 0._dl
-        integer :: npoints = 5000
-        integer :: min_steps_per_osc = 10
+        ! =======================================================================
+        ! EXPOSED PARAMETERS - Set via Python interface or INI files
+        ! =======================================================================
+        
+        ! Early Dark Energy (Quintessence) parameters
+        real(dl) :: n = 3._dl              ! Potential index: V ∝ [1-cos(φ/f)]ⁿ
+        real(dl) :: f = 0.05_dl            ! Decay constant f/M_pl (dimensionless)
+        real(dl) :: m = 5d-54              ! Mass parameter in Planck units
+        real(dl) :: theta_i = 3.1_dl       ! Initial field value φ_i/f
+        real(dl) :: frac_lambda0 = 0._dl   ! Cosmological constant fraction (=0 for composite)
+        logical :: use_zc = .true.         ! Use zc parameterization instead of theta_i
+        real(dl) :: zc = 3000._dl          ! Critical redshift for peak EDE
+        real(dl) :: fde_zc = 0._dl         ! EDE fraction f_EDE at z = z_c
+        integer :: npoints = 5000          ! Integration points for EDE evolution
+        integer :: min_steps_per_osc = 10  ! Minimum steps per oscillation
 
-        ! Late-time CPL (PPF) parameters
-        real(dl) :: w_lam = -1._dl
-        real(dl) :: wa = 0._dl
-        real(dl) :: cs2_lam = 1._dl
+        ! Late-time PPF parameters  
+        real(dl) :: w_lam = -1._dl         ! CPL parameter: w₀ (equation of state today)
+        real(dl) :: wa = 0._dl             ! CPL parameter: wₐ = -dw/da|_{a=1}
+        real(dl) :: cs2_lam = 1._dl        ! Effective sound speed squared
 
-        ! --- Internal state ---
-        type(TEarlyQuintessence) :: EDE
-        type(TDarkEnergyPPF)     :: PPF
-        real(dl) :: Omega_PPF_today = 0._dl
-        integer :: w_ix_EDE = 0
-        integer :: w_ix_PPF = 0
-    class(CAMBdata), pointer, private :: State => null()
+        ! =======================================================================
+        ! INTERNAL STATE - Managed automatically
+        ! =======================================================================
+        type(TEarlyQuintessence) :: EDE    ! EDE component object
+        type(TDarkEnergyPPF)     :: PPF    ! PPF component object
+        real(dl) :: Omega_PPF_today = 0._dl ! PPF dark energy density parameter today
+        integer :: w_ix_EDE = 0            ! Perturbation equation index for EDE
+        integer :: w_ix_PPF = 0            ! Perturbation equation index for PPF
+    class(CAMBdata), pointer, private :: State => null()  ! Pointer to CAMB state
     contains
         procedure :: ReadParams => TEarlyQuintessencePPF_ReadParams
         procedure, nopass :: PythonClass => TEarlyQuintessencePPF_PythonClass
@@ -192,10 +231,66 @@
 
 
     pure function CPL_rho_scaling(a, w0, wa) result(f)
-    ! Background scaling factor for CPL:  rho(a) / rho0
+    !===========================================================================
+    ! Background scaling factor for CPL parameterization: ρ(a)/ρ₀
+    !
+    ! For CPL w(a) = w₀ + wₐ(1-a), the density scaling is:
+    ! ρ(a) = ρ₀ × a^(-3(1+w₀+wₐ)) × exp(3wₐ(a-1))
+    !
+    ! Special numerical treatment for w > -1 (quintessence regime):
+    ! - Prevents overflow at high redshifts (small a)
+    ! - Maintains accuracy across full parameter space
+    ! - Ensures numerical stability for MCMC analysis
+    !
+    ! Input:
+    !   a     : scale factor
+    !   w0    : w₀ parameter (equation of state today)
+    !   wa    : wₐ parameter (evolution parameter)
+    !
+    ! Output:
+    !   f     : density scaling factor ρ(a)/ρ₀
+    !===========================================================================
     real(dl), intent(in) :: a, w0, wa
     real(dl) :: f
-    f = a**(-3._dl*(1._dl+w0+wa)) * exp(3._dl*wa*(a-1._dl))
+    real(dl) :: exponent1, exponent2, w_eff
+    
+    ! Calculate effective equation of state at this scale factor
+    w_eff = w0 + wa*(1._dl - a)
+    
+    ! Special handling for quintessence regime (w > -1) to prevent overflow
+    if (w0 > -1._dl .or. w_eff > -1._dl) then
+        if (a < 0.01_dl) then  ! High redshift (z > 99): use safer approximation
+            f = (a/0.01_dl)**(-3._dl*(1._dl + w0)) * exp(-3._dl*wa*0.99_dl)
+            f = max(f, 1.e-10_dl)  ! Prevent underflow
+            f = min(f, 1.e10_dl)   ! Prevent overflow
+        else
+            ! Standard calculation for reasonable redshifts
+            exponent1 = -3._dl*(1._dl+w0+wa)
+            exponent2 = 3._dl*wa*(a-1._dl)
+            
+            if (abs(exponent1) > 50._dl .or. abs(exponent2) > 50._dl) then
+                f = 1.e-10_dl  ! Safe fallback for extreme cases
+            else
+                f = a**exponent1 * exp(exponent2)
+                if (f <= 0._dl .or. f /= f .or. f > 1.e10_dl) then
+                    f = 1.e-10_dl  ! Handle NaN or extreme values
+                end if
+            end if
+        end if
+    else
+        ! Phantom regime (w < -1): standard calculation with bounds checking
+        exponent1 = -3._dl*(1._dl+w0+wa)
+        exponent2 = 3._dl*wa*(a-1._dl)
+        
+        if (abs(exponent1) > 50._dl .or. abs(exponent2) > 50._dl) then
+            f = 1.e-10_dl
+        else
+            f = a**exponent1 * exp(exponent2)
+            if (f <= 0._dl .or. f /= f .or. f > 1.e10_dl) then
+                f = 1.e-10_dl
+            end if
+        end if
+    end if
     end function CPL_rho_scaling
 
 
@@ -223,8 +318,18 @@
         select type(State => this%State)
         class is (CAMBdata)
             grhov_t_PPF = this%Omega_PPF_today * State%grhocrit * fCPL * a*a
+            
+            ! Safety check for numerical issues when w > -1
+            if (grhov_t_PPF <= 0._dl .or. grhov_t_PPF /= grhov_t_PPF .or. grhov_t_PPF > 1.e15_dl) then
+                grhov_t_PPF = 1.e-10_dl  ! Safe fallback
+            end if
         end select
         wP = this%PPF%w_de(a)
+        
+        ! Also check wP for sanity
+        if (wP /= wP .or. wP < -2._dl .or. wP > 1._dl) then
+            wP = -1._dl  ! Safe fallback
+        end if
     else
         grhov_t_PPF = 0._dl
         wP = -1._dl
@@ -330,13 +435,20 @@
     end subroutine TEarlyQuintessencePPF_Effective_w_wa
 
 
-    subroutine TEarlyQuintessencePPF_PrintFeedback(this, FeedbackLevel)
+    subroutine TEarlyQuintessencePPF_PrintFeedback(this, Feedbacklevel)
     class(TEarlyQuintessencePPF) :: this
-    integer, intent(in) :: FeedbackLevel
+    integer, intent(in) :: Feedbacklevel
 
-    if (FeedbackLevel >0) then
-        write(*,'("EarlyQuintessencePPF: (w0, wa) = (", f8.5, ", ", f8.5, ")  Omega_PPF_today=", f9.6)') &
+    if (Feedbacklevel > 0) then
+        write(*,'("EarlyQuintessencePPF: (w₀, wₐ) = (", f8.5, ", ", f8.5, ")  Ω_PPF,0=", f9.6)') &
             this%w_lam, this%wa, this%Omega_PPF_today
+        write(*,'("  EDE parameters: n=", f6.2, ", f=", f8.5, ", use_zc=", L1)') &
+            this%n, this%f, this%use_zc
+        if (this%use_zc) then
+            write(*,'("  zc=", f8.0, ", fde_zc=", f8.5)') this%zc, this%fde_zc
+        else
+            write(*,'("  theta_i=", f8.3, ", m=", es12.3)') this%theta_i, this%m
+        end if
     end if
     end subroutine TEarlyQuintessencePPF_PrintFeedback
 

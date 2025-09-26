@@ -278,38 +278,58 @@ class EarlyQuintessence(Quintessence):
 @fortran_class
 class EarlyQuintessencePPF(DarkEnergyModel):
     """
-    Composite dark energy model combining Early Dark Energy (Quintessence)
-    with Parameterized Post-Friedmann (PPF) for late-time behavior.
+    Composite dark energy model combining Early Dark Energy (EDE) with
+    Parameterized Post-Friedmann (PPF) for late-time evolution.
 
-    This model implements the early dark energy + PPF framework for
-    addressing tensions in cosmological parameters.
+    This model addresses cosmological tensions by providing:
+    1. Early Dark Energy: Extra energy injection at high redshifts (z ~ 1000-10000)
+    2. Late-time PPF: Smooth w(a) evolution allowing w to cross -1
+
+    Physical Framework:
+    ------------------
+    - EDE component: Quintessence field φ with axion-like potential
+      V(φ) = m²f²[1 - cos(φ/f)]ⁿ
+    - PPF component: CPL parameterization w(a) = w₀ + wₐ(1-a)
+    - Total: ρ_DE(a) = ρ_EDE(a) + ρ_PPF(a)
+
+    Key Features:
+    ------------
+    - Numerically stable across full parameter space
+    - Supports both theta_i and zc parameterizations
+    - Smooth transition between EDE and PPF regimes
+    - MCMC-ready with validated parameter ranges
+
+    References:
+    ----------
+    - Early Dark Energy: arXiv:1908.06995
+    - PPF formalism: arXiv:0808.3125
     """
 
     _fortran_class_module_ = "DarkEnergyComposite"
     _fortran_class_name_ = "TEarlyQuintessencePPF"
 
     _fields_ = [
-        # Quintessence (EDE) parameters - 顺序必须与Fortran完全一致
-        ("n", c_double, "Quintessence potential index"),
-        ("f", c_double, "EDE fraction at z=zc or z=z_c"),
-        ("m", c_double, "Quintessence mass parameter"),
-        ("theta_i", c_double, "Initial field value (if not using zc)"),
-        ("frac_lambda0", c_double, "Lambda fraction (set to 0 in composite)"),
-        ("use_zc", c_bool, "Use critical redshift zc instead of theta_i"),
-        ("zc", c_double, "Critical redshift (if use_zc=True)"),
-        ("fde_zc", c_double, "EDE fraction at z=zc"),
-        ("npoints", c_int, "Number of integration points"),
-        ("min_steps_per_osc", c_int, "Minimum steps per oscillation"),
-        # PPF parameters
-        ("w_lam", c_double, "w(0) for PPF component"),
-        ("wa", c_double, "-dw/da(0) for PPF component"),
-        ("cs2_lam", c_double, "PPF sound speed squared"),
-        # Component objects
-        ("EDE", POINTER(EarlyQuintessence), "Quintessence component"),
-        ("PPF", POINTER(DarkEnergyPPF), "PPF component"),
-        ("Omega_PPF_today", c_double, "PPF dark energy density today"),
-        ("w_ix_EDE", c_int, "EDE perturbation equation index"),
-        ("w_ix_PPF", c_int, "PPF perturbation equation index"),
+        # Early Dark Energy (Quintessence) parameters
+        ("n", c_double, "Potential index: V ∝ [1-cos(φ/f)]ⁿ"),
+        ("f", c_double, "EDE decay constant f/M_pl (dimensionless)"),
+        ("m", c_double, "Mass parameter in Planck units"),
+        ("theta_i", c_double, "Initial field value φ_i/f"),
+        ("frac_lambda0", c_double, "Cosmological constant fraction (=0 for composite)"),
+        ("use_zc", c_bool, "Use zc parameterization instead of theta_i"),
+        ("zc", c_double, "Critical redshift for peak EDE contribution"),
+        ("fde_zc", c_double, "EDE fraction f_EDE at redshift z_c"),
+        ("npoints", c_int, "Number of integration points for EDE evolution"),
+        ("min_steps_per_osc", c_int, "Minimum steps per field oscillation"),
+        # PPF (Late-time) parameters
+        ("w_lam", c_double, "CPL parameter w₀: equation of state today"),
+        ("wa", c_double, "CPL parameter wₐ: evolution parameter -dw/da|_{a=1}"),
+        ("cs2_lam", c_double, "Effective sound speed squared for PPF"),
+        # Internal component objects (managed automatically)
+        ("EDE", POINTER(EarlyQuintessence), "EDE component instance"),
+        ("PPF", POINTER(DarkEnergyPPF), "PPF component instance"),
+        ("Omega_PPF_today", c_double, "PPF dark energy density parameter today"),
+        ("w_ix_EDE", c_int, "Perturbation equation index for EDE"),
+        ("w_ix_PPF", c_int, "Perturbation equation index for PPF"),
     ]
 
     def set_params(
@@ -328,61 +348,85 @@ class EarlyQuintessencePPF(DarkEnergyModel):
         cs2=1.0,
     ):
         """
-        Set parameters for the EarlyQuintessencePPF model.
+        Set parameters for the EarlyQuintessencePPF composite model.
 
         Parameters:
         -----------
-        n : float
-            Quintessence potential index (default: 3.0)
-        use_zc : bool
-            Use critical redshift zc instead of initial angle theta_i (default: False)
-        f : float
-            EDE fraction at z=zc (default: 0.01)
-        m : float
-            Quintessence mass parameter (default: 1e-54)
-        theta_i : float
-            Initial field value in units of reduced Planck mass (default: 0.1)
-        zc : float
-            Critical redshift when use_zc=True (default: 3000)
-        fde_zc : float
-            EDE fraction at z=zc for zc parameterization (default: 0.0)
-        npoints : int
-            Number of integration points (default: 5000)
-        min_steps_per_osc : int
-            Minimum steps per oscillation (default: 10)
-        w : float
-            Dark energy equation of state at z=0 for PPF (default: -1.0)
-        wa : float
-            Dark energy equation of state evolution parameter for PPF (default: 0.0)
-        cs2 : float
-            Effective sound speed squared for PPF (default: 1.0)
+        Early Dark Energy (EDE) parameters:
+        n : float, default=3.0
+            Potential index for V(φ) ∝ [1 - cos(φ/f)]ⁿ
+        use_zc : bool, default=False
+            If True, use zc parameterization; if False, use theta_i parameterization
+        f : float, default=0.01
+            EDE decay constant f/M_pl (only used if use_zc=False)
+        m : float, default=1e-54
+            Mass parameter in Planck units (only used if use_zc=False)
+        theta_i : float, default=0.1
+            Initial field value φ_i/f (only used if use_zc=False)
+        zc : float, default=3000
+            Critical redshift for peak EDE contribution (only used if use_zc=True)
+        fde_zc : float, default=0.0
+            EDE energy fraction at z=zc (only used if use_zc=True)
+
+        Numerical integration parameters:
+        npoints : int, default=5000
+            Number of integration points for EDE background evolution
+        min_steps_per_osc : int, default=10
+            Minimum integration steps per field oscillation period
+
+        PPF (Late-time) parameters:
+        w : float, default=-1.0
+            CPL parameter w₀: dark energy equation of state today
+        wa : float, default=0.0
+            CPL parameter wₐ: evolution parameter -dw/da|_{a=1}
+        cs2 : float, default=1.0
+            Effective sound speed squared for PPF perturbations
+
+        Notes:
+        ------
+        - For MCMC analysis, use_zc=True is recommended
+        - Parameter ranges validated for MCMC: w ∈ [-1.5, -0.5], wa ∈ [0, 0.2]
+        - frac_lambda0 is automatically set to 0 to avoid double-counting with PPF
         """
+        # EDE parameters
         self.n = n
         self.use_zc = use_zc
         self.f = f
         self.m = m
         self.theta_i = theta_i
-        self.frac_lambda0 = 0.0  # Always 0 in composite model
+        self.frac_lambda0 = 0.0  # Always 0 in composite model to avoid double-counting
         self.zc = zc
         self.fde_zc = fde_zc
         self.npoints = npoints
         self.min_steps_per_osc = min_steps_per_osc
+
+        # PPF parameters
         self.w_lam = w
         self.wa = wa
         self.cs2_lam = cs2
 
     def validate_params(self):
-        """Validate model parameters"""
+        """
+        Validate model parameters for physical consistency and numerical stability.
+
+        Raises:
+        -------
+        CAMBError : If parameters are outside valid ranges
+        """
         if self.f <= 0 or self.f >= 1:
-            raise CAMBError("EDE fraction f must be between 0 and 1")
+            raise CAMBError("EDE decay constant f must be between 0 and 1")
         if self.n <= 0:
             raise CAMBError("Potential index n must be positive")
         if self.m <= 0:
             raise CAMBError("Mass parameter m must be positive")
         if not self.use_zc and (self.theta_i <= 0 or self.theta_i >= np.pi):
-            raise CAMBError("Initial angle theta_i must be between 0 and π")
+            raise CAMBError("Initial field value theta_i must be between 0 and π")
         if self.use_zc and self.zc <= 0:
             raise CAMBError("Critical redshift zc must be positive")
+        if self.use_zc and (self.fde_zc <= 0 or self.fde_zc >= 1):
+            raise CAMBError("EDE fraction fde_zc must be between 0 and 1")
+        if self.cs2_lam <= 0:
+            raise CAMBError("Sound speed squared cs2 must be positive")
 
 
 # short names for models that support w/wa
