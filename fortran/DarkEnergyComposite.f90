@@ -15,7 +15,8 @@
     ! Mathematical framework:
     ! - Total dark energy = ρ_EDE(a) + ρ_PPF(a)
     ! - EDE: Scalar field φ with V(φ) = m²f²[1 - cos(φ/f)]ⁿ
-    ! - PPF: CPL parameterization w(a) = w₀ + wₐ(1-a) with PPF perturbations
+    !        At late times: φ → φ_min, so ρ_EDE(a=1) → 0
+    ! - PPF: CPL parameterization w(a) = w₀ + wₐ(1-a) with full Ω_DE today
     !
     ! Authors: [Your institution/group]
     ! Date: 2025
@@ -136,6 +137,20 @@
 
 
     subroutine TEarlyQuintessencePPF_Init(this, State)
+    !===========================================================================
+    ! Initialize the composite EarlyQuintessencePPF model
+    !
+    ! Initialization strategy:
+    ! 1. EDE component: Handles early-time physics (z >> 100)
+    !    - Field φ evolves from initial value, oscillates, then settles
+    !    - At late times (z ≈ 0): φ → φ_min, so ρ_EDE → 0 naturally
+    ! 2. PPF component: Handles all late-time dark energy (z ≲ 100)
+    !    - Gets full Ω_DE today since EDE → 0
+    !    - Provides w(a) = w₀ + wₐ(1-a) evolution
+    !
+    ! This approach is physically motivated: EDE is a transient early phenomenon
+    ! that doesn't contribute significantly to today's dark energy budget.
+    !===========================================================================
     class(TEarlyQuintessencePPF), intent(inout) :: this
     class(TCAMBdata), intent(in), target :: State
     real(dl) :: Omega_EDE_today
@@ -174,23 +189,11 @@
         ! Initialize PPF component  
         call this%PPF%Init(State)
         
-        ! Estimate Omega split between EDE and PPF components  
-        if (this%EDE%use_zc .and. this%EDE%fde_zc > 0._dl) then
-            ! EDE with zc constraint: very small contribution today
-            Omega_EDE_today = min(this%EDE%fde_zc * 0.001_dl, 0.001_dl) * State%Omega_de
-        else
-            ! EDE without zc: no lambda contribution in composite mode
-            Omega_EDE_today = 0._dl
-        end if
-        
-        ! PPF gets the remaining dark energy
-        this%Omega_PPF_today = max(0._dl, State%Omega_de - Omega_EDE_today)
-        
-        ! Sanity check - PPF should get nearly all dark energy
-        if (this%Omega_PPF_today < State%Omega_de * 0.9_dl) then
-            this%Omega_PPF_today = State%Omega_de * 0.99_dl
-            Omega_EDE_today = State%Omega_de * 0.01_dl
-        end if
+        ! Dark energy density allocation:
+        ! EDE naturally decays to zero at late times (φ settles to minimum)
+        ! PPF handles all dark energy density today
+        Omega_EDE_today = 0._dl                    ! EDE contribution today ≈ 0
+        this%Omega_PPF_today = State%Omega_de      ! PPF gets all dark energy
 
     end select
 
@@ -230,76 +233,12 @@
     end subroutine TEarlyQuintessencePPF_Init
 
 
-    pure function CPL_rho_scaling(a, w0, wa) result(f)
-    !===========================================================================
-    ! Background scaling factor for CPL parameterization: ρ(a)/ρ₀
-    !
-    ! For CPL w(a) = w₀ + wₐ(1-a), the density scaling is:
-    ! ρ(a) = ρ₀ × a^(-3(1+w₀+wₐ)) × exp(3wₐ(a-1))
-    !
-    ! Special numerical treatment for w > -1 (quintessence regime):
-    ! - Prevents overflow at high redshifts (small a)
-    ! - Maintains accuracy across full parameter space
-    ! - Ensures numerical stability for MCMC analysis
-    !
-    ! Input:
-    !   a     : scale factor
-    !   w0    : w₀ parameter (equation of state today)
-    !   wa    : wₐ parameter (evolution parameter)
-    !
-    ! Output:
-    !   f     : density scaling factor ρ(a)/ρ₀
-    !===========================================================================
-    real(dl), intent(in) :: a, w0, wa
-    real(dl) :: f
-    real(dl) :: exponent1, exponent2, w_eff
-    
-    ! Calculate effective equation of state at this scale factor
-    w_eff = w0 + wa*(1._dl - a)
-    
-    ! Special handling for quintessence regime (w > -1) to prevent overflow
-    if (w0 > -1._dl .or. w_eff > -1._dl) then
-        if (a < 0.01_dl) then  ! High redshift (z > 99): use safer approximation
-            f = (a/0.01_dl)**(-3._dl*(1._dl + w0)) * exp(-3._dl*wa*0.99_dl)
-            f = max(f, 1.e-10_dl)  ! Prevent underflow
-            f = min(f, 1.e10_dl)   ! Prevent overflow
-        else
-            ! Standard calculation for reasonable redshifts
-            exponent1 = -3._dl*(1._dl+w0+wa)
-            exponent2 = 3._dl*wa*(a-1._dl)
-            
-            if (abs(exponent1) > 50._dl .or. abs(exponent2) > 50._dl) then
-                f = 1.e-10_dl  ! Safe fallback for extreme cases
-            else
-                f = a**exponent1 * exp(exponent2)
-                if (f <= 0._dl .or. f /= f .or. f > 1.e10_dl) then
-                    f = 1.e-10_dl  ! Handle NaN or extreme values
-                end if
-            end if
-        end if
-    else
-        ! Phantom regime (w < -1): standard calculation with bounds checking
-        exponent1 = -3._dl*(1._dl+w0+wa)
-        exponent2 = 3._dl*wa*(a-1._dl)
-        
-        if (abs(exponent1) > 50._dl .or. abs(exponent2) > 50._dl) then
-            f = 1.e-10_dl
-        else
-            f = a**exponent1 * exp(exponent2)
-            if (f <= 0._dl .or. f /= f .or. f > 1.e10_dl) then
-                f = 1.e-10_dl
-            end if
-        end if
-    end if
-    end function CPL_rho_scaling
-
-
     subroutine TEarlyQuintessencePPF_BackgroundDensityAndPressure(this, grhov, a, grhov_t, w)
     class(TEarlyQuintessencePPF), intent(inout) :: this
     real(dl), intent(in) :: grhov, a
     real(dl), intent(out) :: grhov_t
     real(dl), optional, intent(out) :: w
-    real(dl) :: grhov_t_EDE, wE, grhov_t_PPF, wP, fCPL
+    real(dl) :: grhov_t_EDE, wE, grhov_t_PPF, wP, grho_de_PPF
 
     ! Safety check
     if (.not. associated(this%State)) then
@@ -311,25 +250,21 @@
     ! Early Quintessence contribution
     call this%EDE%BackgroundDensityAndPressure(grhov, a, grhov_t_EDE, wE)
 
-    ! Late-time CPL (PPF) background:  grhov_t = 8πG ρ a^2 = Omega_PPF_today * grhocrit * f(a) * a^2
+    ! Late-time PPF background: use PPF's built-in grho_de function
     if (this%Omega_PPF_today > 0._dl) then
-        fCPL = CPL_rho_scaling(a, this%PPF%w_lam, this%PPF%wa)
-        ! Need to access grhocrit through proper type selection
+        ! Use PPF's internal grho_de calculation (handles numerical stability)
+        grho_de_PPF = this%PPF%grho_de(a)
+        
+        ! Convert to grhov_t using PPF's standard formula
         select type(State => this%State)
         class is (CAMBdata)
-            grhov_t_PPF = this%Omega_PPF_today * State%grhocrit * fCPL * a*a
-            
-            ! Safety check for numerical issues when w > -1
-            if (grhov_t_PPF <= 0._dl .or. grhov_t_PPF /= grhov_t_PPF .or. grhov_t_PPF > 1.e15_dl) then
-                grhov_t_PPF = 1.e-10_dl  ! Safe fallback
+            if (a > 1.e-10_dl) then
+                grhov_t_PPF = this%Omega_PPF_today * State%grhocrit * grho_de_PPF / (a*a)
+            else
+                grhov_t_PPF = 0._dl
             end if
         end select
         wP = this%PPF%w_de(a)
-        
-        ! Also check wP for sanity
-        if (wP /= wP .or. wP < -2._dl .or. wP > 1._dl) then
-            wP = -1._dl  ! Safe fallback
-        end if
     else
         grhov_t_PPF = 0._dl
         wP = -1._dl
@@ -360,24 +295,24 @@
     dgrhoe = 0._dl
     dgqe   = 0._dl
 
-    ! EDE part
+    ! EDE perturbations: use EDE's actual background density
     if (this%EDE%num_perturb_equations > 0) then
-        ! For EDE perturbations, use the current EDE component's grhov_t and w
-        wE = this%EDE%w_de(a)
-        ! Estimate EDE's contribution to total grhov_t (very small at late times)
-        grhov_t_EDE = grhov_t * 0.2_dl  ! EDE gets small fraction
+        ! Get EDE's actual background contribution
+        select type(State => this%State)
+        class is (CAMBdata)
+            call this%EDE%BackgroundDensityAndPressure(State%grhov, a, grhov_t_EDE, wE)
+        end select
         call this%EDE%PerturbedStressEnergy(dgrhoe_E, dgqe_E, a, dgq, dgrho, grho, grhov_t_EDE, wE, &
             gpres_noDE, etak, adotoa, k, kf1, ay, ayprime, w_ix + this%w_ix_EDE)
         dgrhoe = dgrhoe + dgrhoe_E
         dgqe   = dgqe   + dgqe_E
     end if
 
-    ! PPF part - use proportional share of composite's total grhov_t
+    ! PPF perturbations: use PPF's actual background density
     if (this%PPF%num_perturb_equations > 0 .and. this%Omega_PPF_today > 0._dl) then
-        ! For perturbations, PPF gets its proportional share of total grhov_t
-        if (grhov_t > 0._dl) then
-            ! Simple approximation: assume PPF dominates at late times
-            grhov_t_PPF = grhov_t * 0.8_dl  ! Most of composite contribution
+        ! Calculate PPF's actual background contribution (same as BackgroundDensityAndPressure)
+        if (a > 1.e-10_dl) then
+            grhov_t_PPF = this%Omega_PPF_today * this%State%grhocrit * this%PPF%grho_de(a) / (a*a)
         else
             grhov_t_PPF = 0._dl
         end if
@@ -435,11 +370,11 @@
     end subroutine TEarlyQuintessencePPF_Effective_w_wa
 
 
-    subroutine TEarlyQuintessencePPF_PrintFeedback(this, Feedbacklevel)
+    subroutine TEarlyQuintessencePPF_PrintFeedback(this, FeedbackLevel)
     class(TEarlyQuintessencePPF) :: this
-    integer, intent(in) :: Feedbacklevel
+    integer, intent(in) :: FeedbackLevel
 
-    if (Feedbacklevel > 0) then
+    if (FeedbackLevel > 0) then
         write(*,'("EarlyQuintessencePPF: (w₀, wₐ) = (", f8.5, ", ", f8.5, ")  Ω_PPF,0=", f9.6)') &
             this%w_lam, this%wa, this%Omega_PPF_today
         write(*,'("  EDE parameters: n=", f6.2, ", f=", f8.5, ", use_zc=", L1)') &
