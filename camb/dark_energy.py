@@ -281,26 +281,10 @@ class EarlyQuintessencePPF(DarkEnergyModel):
     Composite dark energy model combining Early Dark Energy (EDE) with
     Parameterized Post-Friedmann (PPF) for late-time evolution.
 
-    This model addresses cosmological tensions by providing:
-    1. Early Dark Energy: Extra energy injection at high redshifts (z ~ 1000-10000)
-    2. Late-time PPF: Smooth w(a) evolution allowing w to cross -1
-
-    Physical Framework:
-    ------------------
-    - EDE component: Quintessence field φ with axion-like potential
-      V(φ) = m²f²[1 - cos(φ/f)]ⁿ
-    - PPF component: CPL parameterization w(a) = w₀ + wₐ(1-a)
-    - Total: ρ_DE(a) = ρ_EDE(a) + ρ_PPF(a)
-
-    Key Features:
-    ------------
-    - Numerically stable across full parameter space
-    - Supports both theta_i and zc parameterizations
-    - Smooth transition between EDE and PPF regimes
-    - MCMC-ready with validated parameter ranges
+    This model combines EDE at high redshifts with PPF parameterization at late times,
+    addressing cosmological tensions while maintaining numerical stability.
 
     References:
-    ----------
     - Early Dark Energy: arXiv:1908.06995
     - PPF formalism: arXiv:0808.3125
     """
@@ -350,43 +334,32 @@ class EarlyQuintessencePPF(DarkEnergyModel):
         """
         Set parameters for the EarlyQuintessencePPF composite model.
 
-        Parameters:
-        -----------
-        Early Dark Energy (EDE) parameters:
-        n : float, default=3.0
-            Potential index for V(φ) ∝ [1 - cos(φ/f)]ⁿ
-        use_zc : bool, default=False
-            If True, use zc parameterization; if False, use theta_i parameterization
-        f : float, default=0.01
-            EDE decay constant f/M_pl (only used if use_zc=False)
-        m : float, default=1e-54
-            Mass parameter in Planck units (only used if use_zc=False)
-        theta_i : float, default=0.1
-            Initial field value φ_i/f (only used if use_zc=False)
-        zc : float, default=3000
-            Critical redshift for peak EDE contribution (only used if use_zc=True)
-        fde_zc : float, default=0.0
-            EDE energy fraction at z=zc (only used if use_zc=True)
-
-        Numerical integration parameters:
-        npoints : int, default=5000
-            Number of integration points for EDE background evolution
-        min_steps_per_osc : int, default=10
-            Minimum integration steps per field oscillation period
-
-        PPF (Late-time) parameters:
-        w : float, default=-1.0
-            CPL parameter w₀: dark energy equation of state today
-        wa : float, default=0.0
-            CPL parameter wₐ: evolution parameter -dw/da|_{a=1}
-        cs2 : float, default=1.0
-            Effective sound speed squared for PPF perturbations
-
-        Notes:
-        ------
-        - For MCMC analysis, use_zc=True is recommended
-        - Parameter ranges validated for MCMC: w ∈ [-1.5, -0.5], wa ∈ [0, 0.2]
-        - frac_lambda0 is automatically set to 0 to avoid double-counting with PPF
+        Parameters
+        ----------
+        n : float
+            Potential index for V ∝ [1 - cos(φ/f)]ⁿ
+        use_zc : bool
+            Use zc parameterization if True, theta_i if False
+        f : float
+            EDE decay constant f/M_pl (used if use_zc=False)
+        m : float
+            Mass parameter in Planck units (used if use_zc=False)
+        theta_i : float
+            Initial field value φ_i/f (used if use_zc=False)
+        zc : float
+            Critical redshift for peak EDE (used if use_zc=True)
+        fde_zc : float
+            EDE fraction at z=zc (used if use_zc=True)
+        npoints : int
+            Number of integration points for EDE evolution
+        min_steps_per_osc : int
+            Minimum steps per field oscillation
+        w : float
+            CPL parameter w₀: equation of state today
+        wa : float
+            CPL parameter wₐ: evolution parameter
+        cs2 : float
+            Effective sound speed squared for PPF
         """
         # EDE parameters
         self.n = n
@@ -407,11 +380,7 @@ class EarlyQuintessencePPF(DarkEnergyModel):
 
     def validate_params(self):
         """
-        Validate model parameters for physical consistency and numerical stability.
-
-        Raises:
-        -------
-        CAMBError : If parameters are outside valid ranges
+        Validate model parameters for physical consistency.
         """
         if self.f <= 0 or self.f >= 1:
             raise CAMBError("EDE decay constant f must be between 0 and 1")

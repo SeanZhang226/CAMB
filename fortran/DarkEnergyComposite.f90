@@ -2,25 +2,10 @@
     !===============================================================================
     ! EarlyQuintessencePPF: Composite Dark Energy Model
     !
-    ! This module implements a composite dark energy model that combines:
-    ! 1. Early Dark Energy (EDE): Quintessence field with axion-like potential
-    ! 2. Late-time PPF: Parameterized Post-Friedmann w(a) evolution
+    ! This module implements a composite dark energy model combining Early Dark Energy
+    ! (EDE) with Parameterized Post-Friedmann (PPF) for late-time evolution.
     !
-    ! Physical motivation:
-    ! - EDE component provides extra energy injection at high redshifts (z ~ 1000-10000)
-    ! - PPF component handles late-time dark energy evolution with w(a) parameterization
-    ! - Composite approach allows addressing Hubble tension while maintaining
-    !   consistency with late-time observations
-    !
-    ! Mathematical framework:
-    ! - Total dark energy = ρ_EDE(a) + ρ_PPF(a)
-    ! - EDE: Scalar field φ with V(φ) = m²f²[1 - cos(φ/f)]ⁿ
-    !        At late times: φ → φ_min, so ρ_EDE(a=1) → 0
-    ! - PPF: CPL parameterization w(a) = w₀ + wₐ(1-a) with full Ω_DE today
-    !
-    ! Authors: [Your institution/group]
-    ! Date: 2025
-    ! Reference: [If publishing, add relevant citations]
+    ! The model combines EDE at high redshifts with PPF parameterization at late times.
     !===============================================================================
     use precision
     use DarkEnergyInterface
@@ -34,18 +19,6 @@
     private
 
     ! Composite DE: Early Quintessence (EDE) + Late-time PPF
-    !
-    ! This type combines two dark energy components:
-    ! 1. Early Dark Energy: Quintessence field φ with axion-like potential
-    !    V(φ) = m²f²[1 - cos(φ/f)]ⁿ + Λ_cc
-    ! 2. PPF component: CPL parameterization w(a) = w₀ + wₐ(1-a)
-    !
-    ! Key features:
-    ! - EDE provides early-time energy injection (z ~ 1000-10000)
-    ! - PPF handles late-time dark energy evolution
-    ! - Smooth transition between regimes
-    ! - Numerically stable across full parameter space
-    !
     type, extends(TDarkEnergyModel) :: TEarlyQuintessencePPF
         ! =======================================================================
         ! EXPOSED PARAMETERS - Set via Python interface or INI files
@@ -137,25 +110,12 @@
 
 
     subroutine TEarlyQuintessencePPF_Init(this, State)
-    !===========================================================================
     ! Initialize the composite EarlyQuintessencePPF model
-    !
-    ! Initialization strategy:
-    ! 1. EDE component: Handles early-time physics (z >> 100)
-    !    - Field φ evolves from initial value, oscillates, then settles
-    !    - At late times (z ≈ 0): φ → φ_min, so ρ_EDE → 0 naturally
-    ! 2. PPF component: Handles all late-time dark energy (z ≲ 100)
-    !    - Gets full Ω_DE today since EDE → 0
-    !    - Provides w(a) = w₀ + wₐ(1-a) evolution
-    !
-    ! This approach is physically motivated: EDE is a transient early phenomenon
-    ! that doesn't contribute significantly to today's dark energy budget.
-    !===========================================================================
     class(TEarlyQuintessencePPF), intent(inout) :: this
     class(TCAMBdata), intent(in), target :: State
     real(dl) :: Omega_EDE_today
 
-    ! CRITICAL: Set composite model's state pointer first
+    ! Set composite model's state pointer first
     select type(State)
     class is (CAMBdata)
         this%State => State
@@ -169,7 +129,7 @@
         this%EDE%f = this%f
         this%EDE%m = this%m
         this%EDE%theta_i = this%theta_i
-        ! CRITICAL FIX: Set frac_lambda0=0 to avoid double counting with PPF
+        ! Set frac_lambda0=0 to avoid double counting with PPF
         this%EDE%frac_lambda0 = 0._dl   ! EDE should have NO lambda contribution
         this%EDE%use_zc = this%use_zc
         this%EDE%zc = this%zc
