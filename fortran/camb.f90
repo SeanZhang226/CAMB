@@ -10,6 +10,7 @@
     use lensing
     use DarkEnergyFluid
     use DarkEnergyComposite
+    use DarkEnergyIDE
     implicit none
     contains
 
@@ -411,6 +412,8 @@
         allocate (TAxionEffectiveFluid::P%DarkEnergy)
     else if (DarkEneryModel == 'EARLYQUINTESSENCE') then
         allocate (TEarlyQuintessence::P%DarkEnergy)
+    else if (DarkEneryModel == 'IDE') then
+        allocate (TDarkEnergyIDE::P%DarkEnergy)
     else
         ErrMsg = 'Unknown dark energy model: '//trim(DarkEneryModel)
         return
