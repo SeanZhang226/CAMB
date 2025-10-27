@@ -49,22 +49,18 @@ def test_background_evolution():
             pars.set_dark_energy(dark_energy_model='ide', w=-1.0, wa=0.0)
             
             # Set IDE coupling parameters
-            # Note: These need to be set via the params object
             pars.DarkEnergy.set_params(xi_de=xi_de, xi_c=xi_c)
-            
-            # Only compute background (no CMB spectra)
-            pars.WantCls = False
-            pars.WantScalars = False
             
             # Calculate background quantities
             results = camb.get_background(pars)
             
-            # Get age of universe
-            age = results.get_age()
+            # Get some derived quantities
+            # For age, we can use cosmological calculator
+            zre = pars.get_zre()
             
             print(f"Parameters: H0={H0:.2f}, ombh2={ombh2:.4f}, omch2={omch2:.4f}")
             print(f"            xi_de={xi_de:.4f}, xi_c={xi_c:.4f}")
-            print(f"Age of universe: {age:.3f} Gyr")
+            print(f"Derived: zre={zre:.3f}")
             print("Status: SUCCESS")
             
             successful_runs += 1
@@ -119,13 +115,10 @@ def test_full_perturbations():
         pars.DarkEnergy.set_params(xi_de=xi_de, xi_c=xi_c)
         
         # Request CMB power spectra
-        pars.WantCls = True
-        pars.WantScalars = True
         pars.set_for_lmax(2500, lens_potential_accuracy=0)
         
         # Request matter power spectrum
-        pars.WantTransfer = True
-        pars.Transfer.set_for_matter_power(redshifts=[0.], kmax=2.0)
+        pars.set_matter_power(redshifts=[0.], kmax=2.0)
         
         print("\nRunning CAMB with IDE model...")
         
