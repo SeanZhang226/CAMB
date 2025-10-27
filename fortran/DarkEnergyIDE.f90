@@ -21,6 +21,8 @@ module DarkEnergyIDE
         
     contains
         procedure :: ReadParams => TDarkEnergyIDE_ReadParams
+        procedure, nopass :: PythonClass => TDarkEnergyIDE_PythonClass
+        procedure, nopass :: SelfPointer => TDarkEnergyIDE_SelfPointer
         procedure :: Init => TDarkEnergyIDE_Init
         procedure :: PrintFeedback => TDarkEnergyIDE_PrintFeedback
         procedure :: BackgroundDensityAndPressure => TDarkEnergyIDE_BackgroundDensityAndPressure
@@ -47,6 +49,24 @@ contains
         this%xi_c = Ini%Read_Double('xi_c', 0._dl)
         
     end subroutine TDarkEnergyIDE_ReadParams
+
+    function TDarkEnergyIDE_PythonClass()
+        character(LEN=:), allocatable :: TDarkEnergyIDE_PythonClass
+        
+        TDarkEnergyIDE_PythonClass = 'DarkEnergyIDE'
+        
+    end function TDarkEnergyIDE_PythonClass
+
+    subroutine TDarkEnergyIDE_SelfPointer(cptr,P)
+        use iso_c_binding
+        Type(c_ptr) :: cptr
+        Type (TDarkEnergyIDE), pointer :: PType
+        class (TPythonInterfacedClass), pointer :: P
+        
+        call c_f_pointer(cptr, PType)
+        P => PType
+        
+    end subroutine TDarkEnergyIDE_SelfPointer
 
     subroutine TDarkEnergyIDE_Init(this, State)
         class(TDarkEnergyIDE), intent(inout) :: this

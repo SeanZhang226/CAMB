@@ -398,7 +398,47 @@ class EarlyQuintessencePPF(DarkEnergyModel):
             raise CAMBError("Sound speed squared cs2 must be positive")
 
 
+@fortran_class
+class DarkEnergyIDE(DarkEnergyEqnOfState):
+    """
+    Class implementing the Interacting Dark Energy (IDE) model with coupling between
+    dark energy and dark matter.
+    
+    The model includes coupling parameters xi_de and xi_c that control the energy
+    exchange between dark energy and dark matter.
+    """
+
+    _fortran_class_module_ = "DarkEnergyIDE"
+    _fortran_class_name_ = "TDarkEnergyIDE"
+
+    _fields_ = [
+        ("xi_de", c_double, "Coupling constant proportional to dark energy density"),
+        ("xi_c", c_double, "Coupling constant proportional to dark matter density"),
+    ]
+
+    def set_params(self, w=-1.0, wa=0, cs2=1.0, xi_de=0.0, xi_c=0.0):
+        """
+        Set the IDE model parameters.
+
+        :param w: w(0) - equation of state parameter today
+        :param wa: -dw/da(0) - evolution parameter
+        :param cs2: fluid rest-frame sound speed squared
+        :param xi_de: coupling constant proportional to dark energy density
+        :param xi_c: coupling constant proportional to dark matter density
+        """
+        super().set_params(w=w, wa=wa, cs2=cs2)
+        self.xi_de = xi_de
+        self.xi_c = xi_c
+        self.validate_params()
+
+    def validate_params(self):
+        super().validate_params()
+        # Add any specific validation for IDE parameters if needed
+        if abs(self.xi_de) > 1.0 or abs(self.xi_c) > 1.0:
+            raise CAMBError("IDE coupling parameters should be |xi_de|, |xi_c| < 1 for physical models")
+
+
 # short names for models that support w/wa
 F2003Class._class_names.update(
-    {"fluid": DarkEnergyFluid, "ppf": DarkEnergyPPF, "early_ppf": EarlyQuintessencePPF}
+    {"fluid": DarkEnergyFluid, "ppf": DarkEnergyPPF, "early_ppf": EarlyQuintessencePPF, "ide": DarkEnergyIDE}
 )
