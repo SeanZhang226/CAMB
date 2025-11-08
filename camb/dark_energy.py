@@ -230,5 +230,78 @@ class EarlyQuintessence(Quintessence):
             self.fde_zc = fde_zc
 
 
+@fortran_class
+class DarkEnergyIDE(DarkEnergyEqnOfState):
+    """
+    Class implementing Interacting Dark Energy (IDE) model with dark sector coupling.
+    
+    Supports CPL parametrization w(a) = w + (1-a)*wa with energy transfer between 
+    dark energy and dark matter: Q = beta * H * rho (or H_0 * rho).
+    
+    Based on liaocrane/IDECAMB implementation.
+    
+    Parameters:
+        w: w(0), dark energy equation of state at a=1
+        wa: -dw/da(0), evolution parameter
+        beta: coupling strength (dimensionless)
+        coupling_form: form of coupling
+            1 = Hrde (Q proportional to H * rho_de)
+            2 = Hrc (Q proportional to H * rho_c) 
+            3 = H0rde (Q proportional to H_0 * rho_de)
+            4 = H0rc (Q proportional to H_0 * rho_c)
+        eos_form: equation of state form
+            1 = CPL (default, w(a) = w0 + wa*(1-a))
+            2 = HDE (Holographic Dark Energy)
+            3 = NADE (New Agegraphic Dark Energy)
+        covariant_form: covariant derivative form
+            1 = uc (dark matter rest frame, default)
+            2 = ude (dark energy rest frame)
+    """
+
+    _fortran_class_module_ = "DarkEnergyIDE"
+    _fortran_class_name_ = "TDarkEnergyIDE"
+    
+    _fields_ = [
+        ("beta", c_double, "coupling strength"),
+        ("coupling_form", c_int, "coupling form (1=Hrde, 2=Hrc, 3=H0rde, 4=H0rc)"),
+        ("eos_form", c_int, "EoS form (1=CPL, 2=HDE, 3=NADE)"),
+        ("covariant_form", c_int, "covariant form (1=uc, 2=ude)"),
+        ("w_perturb", c_bool, "evolve perturbations"),
+        ("evolve_vc", c_bool, "evolve dark matter velocity"),
+        ("__state", f_pointer),
+    ]
+
+    def set_params(self, w=-0.99, wa=0, beta=0.0, coupling_form=1, 
+                   eos_form=1, covariant_form=1, cs2=1.0):
+        """
+        Set IDE model parameters.
+        
+        Args:
+            w: w(0), equation of state at a=1 (default -0.99)
+            wa: -dw/da(0), evolution parameter (default 0)
+            beta: coupling strength (default 0, no coupling)
+            coupling_form: 1=Hrde, 2=Hrc, 3=H0rde, 4=H0rc (default 1)
+            eos_form: 1=CPL, 2=HDE, 3=NADE (default 1)
+            covariant_form: 1=uc, 2=ude (default 1)
+            cs2: sound speed squared (default 1)
+        """
+        self.w = w
+        self.wa = wa
+        self.beta = beta
+        self.coupling_form = coupling_form
+        self.eos_form = eos_form
+        self.covariant_form = covariant_form
+        self.cs2 = cs2
+        self.validate_params()
+
+    def validate_params(self) -> None:
+        if self.coupling_form not in [1, 2, 3, 4]:
+            raise CAMBError("coupling_form must be 1, 2, 3, or 4")
+        if self.eos_form not in [1, 2, 3]:
+            raise CAMBError("eos_form must be 1, 2, or 3")
+        if self.covariant_form not in [1, 2]:
+            raise CAMBError("covariant_form must be 1 or 2")
+
+
 # short names for models that support w/wa
-F2003Class._class_names.update({"fluid": DarkEnergyFluid, "ppf": DarkEnergyPPF})
+F2003Class._class_names.update({"fluid": DarkEnergyFluid, "ppf": DarkEnergyPPF, "ide": DarkEnergyIDE})
