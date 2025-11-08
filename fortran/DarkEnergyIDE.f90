@@ -68,6 +68,21 @@ contains
         P => PType
     end subroutine TDarkEnergyIDE_SelfPointer
 
+    ! Setter function for IDE parameters (callable from Python)
+    subroutine TDarkEnergyIDE_SetParams(this, beta, coupling_form, eos_form, covariant_form) bind(C)
+        use iso_c_binding
+        type(c_ptr), value :: this
+        real(c_double), value :: beta
+        integer(c_int), value :: coupling_form, eos_form, covariant_form
+        type(TDarkEnergyIDE), pointer :: ide
+
+        call c_f_pointer(this, ide)
+        ide%beta = beta
+        ide%coupling_form = coupling_form
+        ide%eos_form = eos_form
+        ide%covariant_form = covariant_form
+    end subroutine TDarkEnergyIDE_SetParams
+
     subroutine TDarkEnergyIDE_Init(this, State)
         class(TDarkEnergyIDE), intent(inout) :: this
         class(TCAMBdata), intent(in), target :: State

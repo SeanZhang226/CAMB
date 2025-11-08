@@ -223,11 +223,11 @@ contains
         use classes
         use results, only: CAMBdata
         class(TCAMBdata), intent(in), target :: State
-        type(CAMBdata), pointer :: StatePtr
         real(dl) :: EV, c(24), w(nvar, 9), y(nvar), dy(nvar), tol1, a, aend
         integer :: ind, j
         external :: dverk
 
+        ! Set module-level State pointer for use in Eqs_CF
         select type(State)
         class is (CAMBdata)
             State_ptr => State

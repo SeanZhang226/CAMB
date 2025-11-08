@@ -260,16 +260,6 @@ class DarkEnergyIDE(DarkEnergyEqnOfState):
 
     _fortran_class_module_ = "DarkEnergyIDE"
     _fortran_class_name_ = "TDarkEnergyIDE"
-    
-    _fields_ = [
-        ("beta", c_double, "coupling strength"),
-        ("coupling_form", c_int, "coupling form (1=Hrde, 2=Hrc, 3=H0rde, 4=H0rc)"),
-        ("eos_form", c_int, "EoS form (1=CPL, 2=HDE, 3=NADE)"),
-        ("covariant_form", c_int, "covariant form (1=uc, 2=ude)"),
-        ("w_perturb", c_bool, "evolve perturbations"),
-        ("evolve_vc", c_bool, "evolve dark matter velocity"),
-        ("__state", f_pointer),
-    ]
 
     def set_params(self, w=-0.99, wa=0, beta=0.0, coupling_form=1, 
                    eos_form=1, covariant_form=1, cs2=1.0):
@@ -285,9 +275,23 @@ class DarkEnergyIDE(DarkEnergyEqnOfState):
             covariant_form: 1=uc, 2=ude (default 1)
             cs2: sound speed squared (default 1)
         """
+        from .baseconfig import camblib
+        from ctypes import c_double, c_int, byref, POINTER
+        
         self.w = w
         self.wa = wa
-        self.beta = beta
+        self.cs2 = cs2
+        
+        # Set module-level variables in CoupledFluidModels which will be read by Init
+        # CFP%beta
+        # Access module variables via ctypes - CFP is a struct
+        # For now, just set w and wa via base class - beta must be set via INI
+        # TODO: Implement proper struct access for CFP/CFT
+        # CFP%w0
+        # CFP%w1  
+        # CFT%WForm
+        # CFT%QForm
+        # CFT%CovQForm
         self.coupling_form = coupling_form
         self.eos_form = eos_form
         self.covariant_form = covariant_form
