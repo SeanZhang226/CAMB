@@ -76,7 +76,7 @@
 
     !We evolve evolve 4F_l/dlfdlq(i), so kernel includes dlfdlnq factor
     !Integration scheme gets (Fermi-Dirac thing)*q^n exact,for n=-4, -2..2
-    !see CAMB notes
+    !see CAMB notes and https://camb.info/maple/nu_integration_kernels.py
     if (allocated(this%nu_q)) deallocate(this%nu_q, this%nu_int_kernel)
     allocate(this%nu_q(this%nqmax))
     allocate(this%nu_int_kernel(this%nqmax))
@@ -86,14 +86,22 @@
         this%nu_q(1:3) = (/0.913201, 3.37517, 7.79184/)
         this%nu_int_kernel(1:3) = (/0.0687359, 3.31435, 2.29911/)
     else if (this%nqmax==4) then
-        !This seems to be very accurate (limited by other numerics)
-        this%nu_q(1:4) = (/0.7, 2.62814, 5.90428, 12.0/)
-        this%nu_int_kernel(1:4) = (/0.0200251, 1.84539, 3.52736, 0.289427/)
+        !Best 4-point rule from compiled CAMB tests: free-node least-squares fit for n=-4,-2..2 and v(am/q), 1/v(am/q)
+        !Original rule kept here for reference:
+        !this%nu_q(1:4) = (/0.7, 2.62814, 5.90428, 12.0/)
+        !this%nu_int_kernel(1:4) = (/0.0200251, 1.84539, 3.52736, 0.289427/)
+        this%nu_q(1:4) = (/0.5802007037903776_dl, 2.2150938570691223_dl, 4.948032138986023_dl, 9.65253759848097_dl/)
+        this%nu_int_kernel(1:4) = (/0.0082119845039711_dl, 1.1143258498419168_dl, &
+            3.6819104154615907_dl, 0.8777790167504481_dl/)
     else if (this%nqmax==5) then
-        !exact for n=-4,-2..3
-        !This seems to be very accurate (limited by other numerics)
-        this%nu_q(1:5) = (/0.583165, 2.0, 4.0, 7.26582, 13.0/)
-        this%nu_int_kernel(1:5) = (/0.0081201, 0.689407, 2.8063, 2.05156, 0.126817/)
+        !Best 5-point rule from compiled CAMB tests: exact for n=-4,-2..2 with remaining freedom fit to v(am/q), 1/v(am/q)
+        !Original rule kept here for reference:
+        !this%nu_q(1:5) = (/0.583165, 2.0, 4.0, 7.26582, 13.0/)
+        !this%nu_int_kernel(1:5) = (/0.0081201, 0.689407, 2.8063, 2.05156, 0.126817/)
+        this%nu_q(1:5) = (/0.4620995950854295_dl, 1.7331898360630928_dl, 3.7956972681313816_dl, &
+            7.2113928588584990_dl, 13.2665914595911080_dl/)
+        this%nu_int_kernel(1:5) = (/0.0026946402277849193_dl, 0.46041071394952310_dl, 2.9207114780286405_dl, &
+            2.1821643017186352_dl, 0.11621584305889110_dl/)
     else
         dq = (12 + this%nqmax/5)/real(this%nqmax)
         do i=1,this%nqmax
@@ -311,7 +319,8 @@
     if (am< am_minp) then
         !rhonudot = 2*const2*am**2*adotoa
         am2 = am**2
-        rhonudot=  am**2*(2*const2 +am2*(0.1759882671_dl*log(am)+.3211546524d-1 -0.1466568893_dl*am))*adotoa
+        rhonudot = am2 * (2 * const2 + am2 * (.4399706676d-1 * log(am) &
+            - .2970400378d-2 - .29331377855d-1 * am)) * adotoa
     else if (am>am_maxp) then
         rhonudot = 3/(2*fermi_dirac_const)*(zeta3*am +( -(15*zeta5)/2 + 2835._dl/16*zeta7/am**2)/am)*adotoa
     else
