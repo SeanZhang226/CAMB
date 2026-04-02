@@ -1,3 +1,4 @@
+*.local.*
 *.mod
 *.a
 *.o
@@ -77,10 +78,6 @@ lensing_cgrads.f90
 !inifiles/planck_2018_acc.ini
 !inifiles/sources_defaults.ini
 prompts.txt
-
-# Ignore AI-related files
-AI*
-.augment-guidelines
 
 scripts
 uv.lock
