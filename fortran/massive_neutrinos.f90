@@ -17,7 +17,7 @@
     !Actual range for using series (to avoid inaccurate ends of spline)
     real(dl), parameter :: am_minp=am_min + am_max/(nrhopn-1)*1.01_dl
     real(dl), parameter :: am_maxp=am_max*0.9_dl
-    !Optimized 8-point background quadrature (derived via minimax/least-squares fit in scripts/nu_background_quadrature.py)
+    !Optimized 8-point background quadrature (derived via minimax/least-squares fit)
     ! set legacy toggle true to use (less accurate and slower) original 100-step grid.
     logical, parameter :: use_legacy_nu_background_grid = .false.
     real(dl), parameter :: nu_background_q(8) = (/0.2937822_dl, 0.73583979_dl, 1.49222507_dl, 2.68795368_dl, &

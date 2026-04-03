@@ -15,21 +15,25 @@
     implicit none
     private
 
-    ! Bessel functions and their second derivatives for interpolation
+    ! Packed interval coefficients for the cubic Bessel interpolation in Horner form.
+    ! The first index stores:
+    !   1 -> base value y1
+    !   2 -> Horner coefficient c1
+    !   3 -> Horner coefficient c2
+    !   4 -> Horner coefficient c3
 
-    real(dl), dimension(:,:), allocatable ::  ajl, ajlpr, ddajlpr
+    real(dl), dimension(:,:,:), allocatable ::  bessel_horner
 
     integer  num_xx, kmaxfile, max_ix
     Type(lSamples), save :: file_l
     ! parameters for working out where the flat Bessel functions are small
     ! Both should increase for higher accuracy
-    ! real(dl), parameter :: xlimmin=15._dl  , xlimfrac = 0.05_dl
     real(dl), parameter :: xlimmin=35._dl  , xlimfrac = 0.05_dl
     real(dl) file_acc
 
     type(TRanges), save:: BessRanges
 
-    public ajl, ajlpr, ddajlpr, BessRanges, InitSpherBessels, xlimmin, xlimfrac
+    public bessel_horner, BessRanges, InitSpherBessels, xlimmin, xlimfrac
     public USpherBesselWithDeriv, phi_recurs,phi_langer, bjl, Bessels_Free
 
     contains
@@ -42,7 +46,8 @@
 
     !See if already loaded with enough (and correct) lSamp%l values and k*eta values
     if (lSamp%nl <= file_l%nl) then
-        if (allocated(ajl) .and. all(file_l%l(1:lSamp%nl)==lSamp%l(1:lSamp%nl) .and. (max_bessels_l_index <= max_ix)) &
+        if (allocated(bessel_horner) .and. all(file_l%l(1:lSamp%nl)==lSamp%l(1:lSamp%nl) &
+            .and. (max_bessels_l_index <= max_ix)) &
             .and. (int(min(max_bessels_etak,CP%Max_eta_k))+1 <= kmaxfile) &
             .and. (abs(CP%Accuracy%BesselBoost*CP%Accuracy%AccuracyBoost - file_acc) < 1d-2)) return
     end if
@@ -60,8 +65,7 @@
     subroutine GenerateBessels(lSamp, CP)
     Type(lSamples) lSamp
     Type(CAMBParams) :: CP
-    real(dl) x
-    real(dl) xlim
+    real(dl) x, xlim
     integer i,j
 
     if (DebugMsgs .and. FeedbackLevel > 0) write (*,*) 'Generating flat Bessels...'
@@ -84,42 +88,49 @@
     num_xx = BessRanges%npoints
 
 
-    ! The three arrays are always (de-)allocated together. Therefore checking
-    ! one of them for allocation is sufficient.
-    if (allocated(ajl)) then
-        if (any(ubound(ajl) < [num_xx, max_ix])) deallocate(ajl, ajlpr, ddajlpr)
+    if (allocated(bessel_horner)) then
+        if (any(ubound(bessel_horner) < [4, num_xx - 1, max_ix])) deallocate(bessel_horner)
     end if
-    if (.not. allocated(ajl)) then
-        allocate(ajl(1:num_xx,1:max_ix), ajlpr(1:num_xx,1:max_ix), &
-            ddajlpr(1:num_xx,1:max_ix))
+    if (.not. allocated(bessel_horner)) then
+        allocate(bessel_horner(1:4,1:num_xx-1,1:max_ix))
     end if
 
     !$OMP PARALLEL DO DEFAULT(SHARED), SCHEDULE(STATIC), PRIVATE(i, x, xlim)
     do j=1,max_ix
-        do  i=1,num_xx
-            x=BessRanges%points(i)
-            xlim=xlimfrac*lSamp%l(j)
-            xlim=max(xlim,xlimmin)
-            xlim=lSamp%l(j)-xlim
-            if (x > xlim) then
-                if ((lSamp%l(j)==3).and.(x <=0.2) .or. (lSamp%l(j) > 3).and.(x < 0.5) .or. &
-                    (lSamp%l(j)>5).and.(x < 1.0)) then
-                    ajl(i,j)=0
-                else
-                    !if ( lSamp%l(j) > 40000) then
-                    ! ajl(i,j) = phi_langer(lSamp%l(j),0,1._dl,x)
-                    !else
-                    call bjl(lSamp%l(j),x,ajl(i,j))
-                    !end if
-                end if
-            else
-                ajl(i,j)=0
-            end if
-        end do
+        block
+            real(dl) :: h2over6, y0, y1, d0, d1
+            real(dl) :: knot_vals(num_xx), spline_y2(num_xx)
 
-        !     get the interpolation matrix for bessel functions
-        call spline_def(BessRanges%points,ajl(:,j),num_xx,ajlpr(:,j))
-        call spline_def(BessRanges%points,ajlpr(:,j),num_xx,ddajlpr(:,j))
+            do  i=1,num_xx
+                x=BessRanges%points(i)
+                xlim=xlimfrac*lSamp%l(j)
+                xlim=max(xlim,xlimmin)
+                xlim=lSamp%l(j)-xlim
+                if (x > xlim) then
+                    if ((lSamp%l(j)==3).and.(x <=0.2) .or. (lSamp%l(j) > 3).and.(x < 0.5) .or. &
+                        (lSamp%l(j)>5).and.(x < 1.0)) then
+                        knot_vals(i)=0
+                    else
+                        call bjl(lSamp%l(j),x,knot_vals(i))
+                    end if
+                else
+                    knot_vals(i)=0
+                end if
+            end do
+
+            call spline_def(BessRanges%points,knot_vals,num_xx,spline_y2)
+            do i=1,num_xx-1
+                y0 = knot_vals(i)
+                y1 = knot_vals(i+1)
+                d0 = spline_y2(i)
+                d1 = spline_y2(i+1)
+                h2over6 = (BessRanges%points(i+1) - BessRanges%points(i))**2/6
+                bessel_horner(1,i,j) = y1
+                bessel_horner(2,i,j) = y0 - y1 - h2over6*(d0 + 2*d1)
+                bessel_horner(3,i,j) = 3*h2over6*d1
+                bessel_horner(4,i,j) = y0 - y1 - bessel_horner(2,i,j) - bessel_horner(3,i,j)
+            end do
+        end block
     end do
     !$OMP END PARALLEL DO
 
@@ -127,9 +138,7 @@
 
     subroutine Bessels_Free
 
-    if (allocated(ajl)) deallocate(ajl)
-    if (allocated(ajlpr)) deallocate(ajlpr)
-    if (allocated(ddajlpr)) deallocate(ddajlpr)
+    if (allocated(bessel_horner)) deallocate(bessel_horner)
     if (allocated(file_l%l)) deallocate(file_l%l)
     file_l%nl=0
 
@@ -282,10 +291,6 @@
     ENDIF
     IF(X.LT.0.AND.MOD(L,2).NE.0)JL=-JL
     END SUBROUTINE BJL
-
-    !    end module SpherBessels
-
-
 
 
     !ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc

@@ -1463,7 +1463,7 @@
     logical DoInt
     real(dl) xlim,xlmax1
     real(dl) tmin, tmax
-    real(dl) a2, J_l, aa(IV%SourceSteps), fac(IV%SourceSteps)
+    real(dl) a2, base, coeff1, coeff2, coeff3, dx, J_l, x_hi, left_weight(IV%SourceSteps)
     real(dl) xf, sums(ThisSources%SourceNum)
     real(dl) qmax_int
     integer bes_ix,n, bes_index(IV%SourceSteps)
@@ -1477,15 +1477,19 @@
     !     Find the position in the xx table for the x correponding to each
     !     timestep
 
-    do j=1,IV%SourceSteps !Precompute arrays for this k
-        xf=abs(IV%q*(State%tau0-State%TimeSteps%points(j)))
-        bes_index(j)=BessRanges%IndexOf(xf)
-        !Precomputed values for the interpolation
-        bes_ix= bes_index(j)
-        fac(j)=BessRanges%points(bes_ix+1)-BessRanges%points(bes_ix)
-        aa(j)=(BessRanges%points(bes_ix+1)-xf)/fac(j)
-        fac(j)=fac(j)**2*aa(j)/6
-    end do
+    associate(BesselPoints => BessRanges%points, TimePoints => State%TimeSteps%points)
+        !Precompute xf into left_weight as temporary storage, then batch-index and fix weights
+        do j=1,IV%SourceSteps
+            left_weight(j) = abs(IV%q*(State%tau0-TimePoints(j)))
+        end do
+        call BessRanges%IndexOfOrdered(left_weight, IV%SourceSteps, bes_index)
+        do j=1,IV%SourceSteps
+            bes_ix = bes_index(j)
+            x_hi = BesselPoints(bes_ix+1)
+            dx = x_hi - BesselPoints(bes_ix)
+            left_weight(j) = (x_hi - left_weight(j)) / dx
+        end do
+    end associate
 
     do j=1,max_bessels_l_index
         if (ThisCT%ls%l(j) > llmax) return
@@ -1518,11 +1522,14 @@
         if (ThisSources%SourceNum==2) then
             !This is the innermost loop, so we separate the no lensing scalar case to optimize it
             do n= State%TimeSteps%IndexOf(tmin),min(IV%SourceSteps,State%TimeSteps%IndexOf(tmax))
-                a2=aa(n)
+                a2=left_weight(n)
                 bes_ix=bes_index(n)
+                base = bessel_horner(1,bes_ix,j)
+                coeff1 = bessel_horner(2,bes_ix,j)
+                coeff2 = bessel_horner(3,bes_ix,j)
+                coeff3 = bessel_horner(4,bes_ix,j)
 
-                J_l=a2*ajl(bes_ix,j)+(1-a2)*(ajl(bes_ix+1,j) - ((a2+1) &
-                    *ajlpr(bes_ix,j)+(2-a2)*ajlpr(bes_ix+1,j))* fac(n)) !cubic spline
+                J_l = base + a2*(coeff1 + a2*(coeff2 + a2*coeff3)) !cubic spline in Horner form
 
                 J_l = J_l*State%TimeSteps%dpoints(n)
                 sums(1) = sums(1) + IV%Source_q(n,1)*J_l
@@ -1537,11 +1544,14 @@
                 if (CP%CustomSources%num_custom_sources==0 .and. State%num_redshiftwindows==0) then
                     do n= State%TimeSteps%IndexOf(tmin),min(IV%SourceSteps,State%TimeSteps%IndexOf(tmax))
                         !Full Bessel integration
-                        a2=aa(n)
+                        a2=left_weight(n)
                         bes_ix=bes_index(n)
+                        base = bessel_horner(1,bes_ix,j)
+                        coeff1 = bessel_horner(2,bes_ix,j)
+                        coeff2 = bessel_horner(3,bes_ix,j)
+                        coeff3 = bessel_horner(4,bes_ix,j)
 
-                        J_l=a2*ajl(bes_ix,j)+(1-a2)*(ajl(bes_ix+1,j) - ((a2+1) &
-                            *ajlpr(bes_ix,j)+(2-a2)*ajlpr(bes_ix+1,j))* fac(n)) !cubic spline
+                        J_l = base + a2*(coeff1 + a2*(coeff2 + a2*coeff3)) !cubic spline in Horner form
                         J_l = J_l*State%TimeSteps%dpoints(n)
 
                         !The unwrapped form is faster
@@ -1558,11 +1568,14 @@
                     if (CP%CustomSources%num_custom_sources==0) then
                         do n= State%TimeSteps%IndexOf(tmin),min(IV%SourceSteps,State%TimeSteps%IndexOf(tmax))
                             !Full Bessel integration
-                            a2=aa(n)
+                            a2=left_weight(n)
                             bes_ix=bes_index(n)
+                            base = bessel_horner(1,bes_ix,j)
+                            coeff1 = bessel_horner(2,bes_ix,j)
+                            coeff2 = bessel_horner(3,bes_ix,j)
+                            coeff3 = bessel_horner(4,bes_ix,j)
 
-                            J_l=a2*ajl(bes_ix,j)+(1-a2)*(ajl(bes_ix+1,j) - ((a2+1) &
-                                *ajlpr(bes_ix,j)+(2-a2)*ajlpr(bes_ix+1,j))* fac(n)) !cubic spline
+                            J_l = base + a2*(coeff1 + a2*(coeff2 + a2*coeff3)) !cubic spline in Horner form
                             J_l = J_l*State%TimeSteps%dpoints(n)
 
                             !The unwrapped form is faster
@@ -1578,11 +1591,14 @@
                     else
                         do n= State%TimeSteps%IndexOf(tmin),min(IV%SourceSteps,State%TimeSteps%IndexOf(tmax))
                             !Full Bessel integration
-                            a2=aa(n)
+                            a2=left_weight(n)
                             bes_ix=bes_index(n)
+                            base = bessel_horner(1,bes_ix,j)
+                            coeff1 = bessel_horner(2,bes_ix,j)
+                            coeff2 = bessel_horner(3,bes_ix,j)
+                            coeff3 = bessel_horner(4,bes_ix,j)
 
-                            J_l=a2*ajl(bes_ix,j)+(1-a2)*(ajl(bes_ix+1,j) - ((a2+1) &
-                                *ajlpr(bes_ix,j)+(2-a2)*ajlpr(bes_ix+1,j))* fac(n)) !cubic spline
+                            J_l = base + a2*(coeff1 + a2*(coeff2 + a2*coeff3)) !cubic spline in Horner form
                             J_l = J_l*State%TimeSteps%dpoints(n)
 
                             !The unwrapped form is faster
@@ -1621,12 +1637,14 @@
                     do n= State%TimeSteps%IndexOf(State%ThermoData%tau_start_redshiftwindows), &
                         min(IV%SourceSteps, State%TimeSteps%IndexOf(tmax))
                         !Full Bessel integration
-                        a2 = aa(n)
+                        a2 = left_weight(n)
                         bes_ix = bes_index(n)
+                        base = bessel_horner(1,bes_ix,j)
+                        coeff1 = bessel_horner(2,bes_ix,j)
+                        coeff2 = bessel_horner(3,bes_ix,j)
+                        coeff3 = bessel_horner(4,bes_ix,j)
 
-                        J_l = a2 * ajl(bes_ix, j) + (1 - a2) * (ajl(bes_ix + 1, j) -&
-                            ((a2 + 1) * ajlpr(bes_ix, j) + (2 - a2) * &
-                            ajlpr(bes_ix + 1, j)) * fac(n)) !cubic spline
+                        J_l = base + a2*(coeff1 + a2*(coeff2 + a2*coeff3)) !cubic spline in Horner form
                         J_l = J_l * State%TimeSteps%dpoints(n)
 
                         sums(4) = sums(4) + IV%Source_q(n, 4) * J_l

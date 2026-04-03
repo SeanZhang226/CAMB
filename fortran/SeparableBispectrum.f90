@@ -105,7 +105,7 @@
     real(dl), intent(in) :: r
     integer q_ix, j, bes_ix
     integer n, nP, ellmax
-    real(dl) xf , J_l, fac, a2, k, dlnk, term, P, kpow, kpowP
+    real(dl) xf , J_l, a2, base, coeff1, coeff2, coeff3, dx, k, dlnk, term, P, kpow, kpowP, x_hi
 
     n = size(ind)
     nP =size(indP)
@@ -115,9 +115,9 @@
         k = CTrans%q%points(q_ix)
         xf = k*r
         bes_ix=BessRanges%IndexOf(xf)
-        fac=BessRanges%points(bes_ix+1)-BessRanges%points(bes_ix)
-        a2=(BessRanges%points(bes_ix+1)-xf)/fac
-        fac=fac**2*a2/6
+        x_hi = BessRanges%points(bes_ix+1)
+        dx = x_hi-BessRanges%points(bes_ix)
+        a2=(x_hi-xf)/dx
         dlnk = CTrans%q%dpoints(q_ix) /k
         P = CP%InitPower%ScalarPower(k)*InternalScale  !!only first index for now
 
@@ -126,8 +126,11 @@
         kpowP = k**indP(1) * P
         do j=1,CTrans%ls%nl
             if (CTrans%ls%l(j) <= ellmax) then
-                J_l=a2*ajl(bes_ix,j)+(1-a2)*(ajl(bes_ix+1,j) - ((a2+1) &
-                    *ajlpr(bes_ix,j)+(2-a2)*ajlpr(bes_ix+1,j))* fac) !cubic spline
+                base = bessel_horner(1,bes_ix,j)
+                coeff1 = bessel_horner(2,bes_ix,j)
+                coeff2 = bessel_horner(3,bes_ix,j)
+                coeff3 = bessel_horner(4,bes_ix,j)
+                J_l = base + a2*(coeff1 + a2*(coeff2 + a2*coeff3)) !cubic spline in Horner form
                 term = CTrans%Delta_p_l_k(1,j,q_ix)*J_l*dlnk
                 res(j,1,1) = res(j,1,1) + term * kpow
                 resP(j,1,1) = resP(j,1,1) + term * kpowP
@@ -165,7 +168,8 @@
     real(dl), intent(in) :: r
     integer q_ix, j, bes_ix, i
     integer n, nP, ellmax
-    real(dl) xf , J_l, fac, a2, k, dlnk, term, P, kpow(size(ind)), kpow2(size(indP))
+    real(dl) xf , J_l, a2, base, coeff1, coeff2, coeff3, dx, k, dlnk, term, P, kpow(size(ind)), &
+        kpow2(size(indP)), x_hi
 
     if (shape == shape_local) then
         call NonGauss_l_r_localOpt(CP,CTrans, ind, indP,res, resP, nfields, r)
@@ -180,9 +184,9 @@
         k = CTrans%q%points(q_ix)
         xf = k*r
         bes_ix=BessRanges%IndexOf(xf)
-        fac=BessRanges%points(bes_ix+1)-BessRanges%points(bes_ix)
-        a2=(BessRanges%points(bes_ix+1)-xf)/fac
-        fac=fac**2*a2/6
+        x_hi = BessRanges%points(bes_ix+1)
+        dx = x_hi-BessRanges%points(bes_ix)
+        a2=(x_hi-xf)/dx
         dlnk = CTrans%q%dpoints(q_ix) /k
         P = CP%InitPower%ScalarPower(k)*InternalScale  !!only first index for now
 
@@ -197,8 +201,11 @@
         do j=1,CTrans%ls%nl
             if (CTrans%ls%l(j) <= ellmax) then
 
-                J_l=a2*ajl(bes_ix,j)+(1-a2)*(ajl(bes_ix+1,j) - ((a2+1) &
-                    *ajlpr(bes_ix,j)+(2-a2)*ajlpr(bes_ix+1,j))* fac) !cubic spline
+                base = bessel_horner(1,bes_ix,j)
+                coeff1 = bessel_horner(2,bes_ix,j)
+                coeff2 = bessel_horner(3,bes_ix,j)
+                coeff3 = bessel_horner(4,bes_ix,j)
+                J_l = base + a2*(coeff1 + a2*(coeff2 + a2*coeff3)) !cubic spline in Horner form
                 !call BJL(CTrans%ls%l(j), xf, J_l)
                 term = CTrans%Delta_p_l_k(1,j,q_ix)*J_l*dlnk
                 do i=1,n
