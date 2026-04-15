@@ -5,7 +5,7 @@ import os
 from ctypes import POINTER, byref, c_bool, c_double
 from inspect import FullArgSpec, getfullargspec
 
-from . import constants, model
+from . import _ini, constants, model
 from ._config import config
 from .baseconfig import CAMBError as CAMBError
 from .baseconfig import CAMBUnknownArgumentError, CAMBValueError, camblib, filepath_to_fortran, np
@@ -332,6 +332,10 @@ def validate_ini_file(filename):
     if err:
         raise CAMBValueError(err + f" ({filename})")
     return True
+
+
+def write_ini(params: CAMBparams, ini_filename, validate=True):
+    return params.write_ini(ini_filename, validate=validate)
 
 
 def run_ini(ini_filename, no_validate=False):

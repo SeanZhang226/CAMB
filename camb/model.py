@@ -5,7 +5,7 @@ import logging
 from ctypes import POINTER, byref, c_bool, c_double, c_int, c_void_p
 from typing import ClassVar, overload
 
-from . import bbn, constants
+from . import _ini, bbn, constants
 from . import recombination as recomb
 from . import reionization as reion
 from .baseconfig import (
@@ -418,6 +418,15 @@ class CAMBparams(F2003Class):
         :return: True if OK
         """
         return self.f_Validate() != 0
+
+    def write_ini(self, ini_filename, validate=True):
+        """
+        Write the current parameters to a CAMB .ini file.
+
+        :param ini_filename: path to the output .ini file
+        :param validate: whether to validate the written file
+        """
+        return _ini.write_ini(self, ini_filename, validate=validate)
 
     def set_accuracy(
         self,

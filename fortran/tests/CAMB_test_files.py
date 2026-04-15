@@ -11,8 +11,6 @@ import sys
 import tempfile
 import time
 
-from inifile import IniFile
-
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 FORTRAN_DIR = os.path.abspath(os.path.join(TESTS_DIR, ".."))
 REPO_ROOT = os.path.abspath(os.path.join(FORTRAN_DIR, ".."))
@@ -119,16 +117,39 @@ def ensure_camb_on_path():
         sys.path.insert(0, REPO_ROOT)
 
 
+def make_ini_file(*args, **kwargs):
+    ensure_camb_on_path()
+    from camb.inifile import IniFile
+
+    return IniFile(*args, **kwargs)
+
+
 def apply_ini_overrides(filename):
     if not args.override:
         return filename
-    ini = IniFile()
-    ini.readFile(filename, keep_includes=True)
+    ini = make_ini_file(filename)
     for key, value in args.override:
         if key not in ini.params:
             ini.readOrder.append(key)
         ini.params[key] = value
     ini.saveFile(filename)
+    return filename
+
+
+def write_flat_ini_file(filename, parameter_lines):
+    filename = os.path.abspath(filename)
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".ini", dir=os.path.dirname(filename), delete=False, encoding="utf-8"
+    ) as handle:
+        handle.write("\n".join(parameter_lines))
+        handle.write("\n")
+        temp_filename = handle.name
+
+    try:
+        make_ini_file(temp_filename).saveFile(filename)
+    finally:
+        os.remove(temp_filename)
+
     return filename
 
 
@@ -629,22 +650,18 @@ def makeIniFiles():
     params = getTestParams()
     ini_files = []
     base_settings = os.path.abspath(args.base_settings)
-    base_ini = "inheritbase_" + os.path.basename(base_settings)
-    shutil.copy(base_settings, os.path.join(args.ini_dir, base_ini))
     for pars in params:
         name = "params_" + pars[0]
         fname = os.path.join(args.ini_dir, name + ".ini")
         ini_files.append(fname)
-        with open(fname, "w") as f:
-            f.write(
-                "output_root="
-                + os.path.join(out_files_dir, name)
-                + "\n"
-                + "\n".join(pars[1:])
-                + "\nDEFAULT("
-                + base_ini
-                + ")\n"
-            )
+        write_flat_ini_file(
+            fname,
+            [
+                "output_root=" + os.path.join(out_files_dir, name),
+                *pars[1:],
+                f"DEFAULT({base_settings})",
+            ],
+        )
         apply_ini_overrides(fname)
     printlog("Made test ini files.")
     return ini_files
@@ -729,13 +746,13 @@ def num_unequal(filename, cmpFcn):
             inifilename = os.path.join(args.ini_dir, args.out_files_dir, inifilename)
             if not os.path.exists(inifilename):
                 if "sharp_cl_params" in inifilename:
-                    inifile = IniFile()
+                    inifile = make_ini_file()
                 else:
                     printlog("ini filename does not exist: %s" % inifilename)
             else:
                 try:
                     # The following split fails for *_transfer_out.* files where it not needed anyway.
-                    inifile = IniFile()
+                    inifile = make_ini_file()
                     inifile.readFile(inifilename)
                 except OSError:
                     printlog("Could not open ini filename: %s" % inifilename)

@@ -37,6 +37,7 @@ from .camb import (
     set_feedback_level,
     set_params,
     set_params_cosmomc,
+    write_ini,
 )
 from .dark_energy import DarkEnergyFluid, DarkEnergyPPF
 from .initialpower import InitialPowerLaw, SplinedInitialPower

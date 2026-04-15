@@ -1,7 +1,9 @@
 import os
 import pickle
 import platform
+import subprocess
 import sys
+import tempfile
 import unittest
 
 import numpy as np
@@ -142,6 +144,64 @@ class CambTest(unittest.TestCase):
         self.assertEqual(pars.DarkEnergy.w_n, 0.4)
         self.assertEqual(pars.DarkEnergy.fde_zc, 0.05)
         self.assertEqual(pars.DarkEnergy.zc, 4000)
+
+    def testWriteIniRoundTrip(self):
+        script = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "fortran", "tests", "CAMB_test_files.py")
+        )
+        script_dir = os.path.dirname(script)
+        repo_root = os.path.abspath(os.path.join(script_dir, "..", ".."))
+        fortran_dir = os.path.join(repo_root, "fortran")
+        base_settings = os.path.join(repo_root, "inifiles", "params.ini")
+
+        with tempfile.TemporaryDirectory() as ini_dir:
+            subprocess.run(
+                [
+                    sys.executable,
+                    script,
+                    ini_dir,
+                    "--make_ini",
+                    "--no_run_test",
+                    "--base_settings",
+                    base_settings,
+                ],
+                check=True,
+                cwd=fortran_dir,
+            )
+            ini_files = sorted(
+                os.path.join(ini_dir, filename)
+                for filename in os.listdir(ini_dir)
+                if filename.endswith(".ini") and filename.startswith("params_")
+            )
+            self.assertTrue(ini_files)
+
+            cwd = os.getcwd()
+            os.chdir(fortran_dir)
+            try:
+                for ini_file in ini_files:
+                    with self.subTest(ini=os.path.basename(ini_file)):
+                        pars = camb.read_ini(ini_file)
+                        written_ini = os.path.join(ini_dir, "written_" + os.path.basename(ini_file))
+                        camb.write_ini(pars, written_ini)
+                        self.assertTrue(os.path.exists(written_ini))
+            finally:
+                os.chdir(cwd)
+
+    def testWriteIniFromPythonParams(self):
+        pars = camb.CAMBparams()
+        pars.set_cosmology(H0=67, ombh2=0.0224, omch2=0.119, tau=0.054, mnu=0.06)
+        pars.set_dark_energy(w=-0.95, wa=0.15, dark_energy_model="ppf")
+        pars.InitPower.set_params(As=2.1e-9, ns=0.965, nrun=0.01, r=0.03, nt=0.0)
+        pars.set_matter_power(redshifts=[0.0, 0.5, 1.0], kmax=2.0, accurate_massive_neutrino_transfers=True)
+        pars.set_for_lmax(2200, lens_potential_accuracy=1)
+        pars.WantTensors = True
+        pars.NonLinearModel.set_params(halofit_version="mead2020_feedback", HMCode_logT_AGN=7.7)
+        pars.Alens = 0.95
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            ini_file = os.path.join(temp_dir, "python_params.ini")
+            pars.write_ini(ini_file)
+            self.assertTrue(os.path.exists(ini_file))
 
     def testBackground(self):
         pars = camb.CAMBparams()
