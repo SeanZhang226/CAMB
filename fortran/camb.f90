@@ -9,6 +9,7 @@
     use Recombination, only : TRecFast
     use lensing
     use DarkEnergyFluid
+    use DarkEnergyComposite
     implicit none
     contains
 
@@ -240,6 +241,7 @@
     use DarkEnergyFluid
     use DarkEnergyPPF
     use DarkEnergyIDE
+    use DarkEnergyComposite
     use Quintessence
     use results
 #ifdef COSMOREC
@@ -429,6 +431,9 @@
         allocate (TAxionEffectiveFluid::P%DarkEnergy)
     else if (DarkEneryModel == 'EARLYQUINTESSENCE') then
         allocate (TEarlyQuintessence::P%DarkEnergy)
+    else if (DarkEneryModel == 'EARLYQUINTESSENCEPPF' .or. DarkEneryModel == 'EARLY_PPF' .or. &
+        DarkEneryModel == 'EDEPPF') then
+        allocate (TEarlyQuintessencePPF::P%DarkEnergy)
     else if (DarkEneryModel == 'IDE' .or. DarkEneryModel == 'INTERACTINGDARKENERGY') then
         allocate (TInteractingDarkEnergy::P%DarkEnergy)
     else

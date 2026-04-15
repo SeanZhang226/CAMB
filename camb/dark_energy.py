@@ -263,5 +263,94 @@ class EarlyQuintessence(Quintessence):
             self.fde_zc = fde_zc
 
 
+@fortran_class
+class EarlyQuintessencePPF(DarkEnergyModel):
+    """
+    Composite model combining early quintessence and late-time PPF dark energy.
+    """
+
+    _fortran_class_module_ = "DarkEnergyComposite"
+    _fortran_class_name_ = "TEarlyQuintessencePPF"
+
+    _fields_ = (
+        ("n", c_double, "power index for potential"),
+        ("f", c_double, r"f/Mpl (sqrt(8\piG)f)"),
+        ("m", c_double, "mass parameter in reduced Planck mass units"),
+        ("theta_i", c_double, "phi/f initial field value"),
+        ("frac_lambda0", c_double, "fraction of DE assigned to cosmological constant"),
+        ("use_zc", c_bool, "solve for f, m using zc and fde_zc"),
+        ("zc", c_double, "redshift of peak fractional early dark energy density"),
+        ("fde_zc", c_double, "fraction of early dark energy density to total at peak"),
+        ("npoints", c_int, "number of points for background integration spacing"),
+        ("min_steps_per_osc", c_int, "minimum number of steps per oscillation"),
+        ("w_lam", c_double, "w(0) for late-time PPF component"),
+        ("wa", c_double, "-dw/da(0) for late-time PPF component"),
+        ("cs2_lam", c_double, "sound speed squared for late-time PPF component"),
+    )
+
+    def set_params(
+        self,
+        n=3.0,
+        f=0.05,
+        m=5e-54,
+        theta_i=0.1,
+        frac_lambda0=0.0,
+        use_zc=True,
+        zc=3000.0,
+        fde_zc=0.0,
+        npoints=5000,
+        min_steps_per_osc=10,
+        w=-1.0,
+        wa=0.0,
+        cs2=1.0,
+    ):
+        self.n = n
+        self.f = f
+        self.m = m
+        self.theta_i = theta_i
+        self.frac_lambda0 = frac_lambda0
+        self.use_zc = use_zc
+        self.zc = zc
+        self.fde_zc = fde_zc
+        self.npoints = npoints
+        self.min_steps_per_osc = min_steps_per_osc
+        self.w_lam = w
+        self.wa = wa
+        self.cs2_lam = cs2
+        self.validate_params()
+        return self
+
+    def validate_params(self) -> None:
+        if self.n <= 0:
+            raise CAMBError("n must be positive")
+        if self.f <= 0:
+            raise CAMBError("f must be positive")
+        if self.m <= 0:
+            raise CAMBError("m must be positive")
+        if self.frac_lambda0 < 0 or self.frac_lambda0 >= 1:
+            raise CAMBError("frac_lambda0 must satisfy 0 <= frac_lambda0 < 1")
+        if not self.use_zc and not (0 < self.theta_i < np.pi):
+            raise CAMBError("theta_i must satisfy 0 < theta_i < pi when use_zc is False")
+        if self.use_zc and self.zc <= 0:
+            raise CAMBError("zc must be positive when use_zc is True")
+        if self.use_zc and (self.fde_zc < 0 or self.fde_zc >= 1):
+            raise CAMBError("fde_zc must satisfy 0 <= fde_zc < 1 when use_zc is True")
+        if self.npoints < 64:
+            raise CAMBError("npoints must be at least 64")
+        if self.min_steps_per_osc < 1:
+            raise CAMBError("min_steps_per_osc must be >= 1")
+        if self.w_lam + self.wa > 0:
+            raise CAMBError("w + wa > 0 gives w>0 at high redshift")
+        if self.cs2_lam <= 0:
+            raise CAMBError("cs2 must be positive")
+
+
 # short names for models that support w/wa
-F2003Class._class_names.update({"fluid": DarkEnergyFluid, "ppf": DarkEnergyPPF, "ide": InteractingDarkEnergy})
+F2003Class._class_names.update(
+    {
+        "fluid": DarkEnergyFluid,
+        "ppf": DarkEnergyPPF,
+        "ide": InteractingDarkEnergy,
+        "early_ppf": EarlyQuintessencePPF,
+    }
+)
