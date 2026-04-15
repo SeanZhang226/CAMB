@@ -9,6 +9,8 @@
     implicit none
 
     private
+    real(dl), parameter :: a_eval_min = 1.e-10_dl
+    real(dl), parameter :: w_cosmo_constant_tol = 1.e-6_dl
 
     type, extends(TDarkEnergyModel) :: TEarlyQuintessencePPF
         ! Early dark energy (quintessence) parameters
@@ -136,7 +138,7 @@
     if (this%Omega_PPF_today <= 0._dl) then
         this%PPF%num_perturb_equations = 0
     else
-        if (abs(this%PPF%w_lam + 1._dl) < 1.e-6_dl .and. this%PPF%wa == 0._dl) then
+        if (abs(this%PPF%w_lam + 1._dl) < w_cosmo_constant_tol .and. this%PPF%wa == 0._dl) then
             this%PPF%num_perturb_equations = 0
         else
             this%PPF%num_perturb_equations = 1
@@ -167,7 +169,7 @@
 
     call this%EDE%BackgroundDensityAndPressure(grhov, a, grhov_t_EDE, wE)
 
-    if (this%Omega_PPF_today > 0._dl .and. a > 1.e-10_dl) then
+    if (this%Omega_PPF_today > 0._dl .and. a > a_eval_min) then
         grhov_t_PPF = this%Omega_PPF_today * this%State%grhocrit * this%PPF%grho_de(a) / (a * a)
         wP = this%PPF%w_de(a)
     else
@@ -210,7 +212,7 @@
     end if
 
     if (this%PPF%num_perturb_equations > 0 .and. this%Omega_PPF_today > 0._dl) then
-        if (a > 1.e-10_dl) then
+        if (a > a_eval_min) then
             grhov_t_PPF = this%Omega_PPF_today * this%State%grhocrit * this%PPF%grho_de(a) / (a * a)
         else
             grhov_t_PPF = 0._dl
