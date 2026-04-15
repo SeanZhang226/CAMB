@@ -9,7 +9,7 @@
     implicit none
 
     private
-    real(dl), parameter :: a_eval_min = 1.e-10_dl
+    real(dl), parameter :: a_eval_min = 1e-10_dl
     real(dl), parameter :: w_cosmo_constant_tol = 1.e-6_dl
 
     type, extends(TDarkEnergyModel) :: TEarlyQuintessencePPF
