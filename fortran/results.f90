@@ -1225,10 +1225,11 @@
     !  Return 8*pi*G*rho_no_de*a**4 where rho_no_de includes everything except dark energy.
     class(CAMBdata) :: this
     real(dl), intent(in) :: a
-    real(dl) grhoa2, rhonu
+    real(dl) grhoa2, rhonu, grhoc_t
     integer nu_i
 
-    grhoa2 = this%grhok * a**2 + (this%grhoc + this%grhob) * a + this%grhog + this%grhornomass
+    call this%CP%DarkEnergy%BackgroundCDMDensity(this%grhoc, a, grhoc_t)
+    grhoa2 = this%grhok * a**2 + this%grhob * a + this%grhog + this%grhornomass + grhoc_t * a**2
 
     if (this%CP%Num_Nu_massive /= 0) then
         !Get massive neutrino density relative to massless
