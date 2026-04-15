@@ -1,5 +1,6 @@
     module DarkEnergyIDE
     use DarkEnergyPPF
+    use results, only: CAMBdata
     use classes
     use interpolation
     use MassiveNu, only: ThermalNuBack
@@ -110,11 +111,17 @@
 
     this%wa = this%w1
     call this%TDarkEnergyPPF%Init(State)
-    this%grhov0 = State%grhov
-    this%grhoc0 = State%grhoc
 
-    call this%SolveBackground(State)
-    this%has_background_solution = .true.
+    select type(State)
+    class is (CAMBdata)
+        this%grhov0 = State%grhov
+        this%grhoc0 = State%grhoc
+        call this%SolveBackground(State)
+        this%has_background_solution = .true.
+    class default
+        call GlobalError("InteractingDarkEnergy requires CAMBdata state", error_unsupported_params)
+        return
+    end select
 
     if (abs(this%beta) > 1e-14_dl) then
         this%is_cosmological_constant = .false.
@@ -126,7 +133,7 @@
 
     subroutine TInteractingDarkEnergy_SolveBackground(this, State)
     class(TInteractingDarkEnergy), intent(inout) :: this
-    class(TCAMBdata), intent(in) :: State
+    type(CAMBdata), intent(in) :: State
     integer :: i, n
     real(dl) :: dloga, a_prev, a_now
     real(dl) :: k1_de, k2_de, k3_de, k4_de
@@ -197,7 +204,7 @@
 
     subroutine TInteractingDarkEnergy_BackgroundDerivs(this, State, a, de_a4, c_a4, dlog_de_a4, dlog_c_a4)
     class(TInteractingDarkEnergy), intent(in) :: this
-    class(TCAMBdata), intent(in) :: State
+    type(CAMBdata), intent(in) :: State
     real(dl), intent(in) :: a, de_a4, c_a4
     real(dl), intent(out) :: dlog_de_a4, dlog_c_a4
     real(dl) :: a2, grhov_t, grhoc_t, wde, adotoa, gq
