@@ -129,6 +129,34 @@ class DarkEnergyPPF(DarkEnergyEqnOfState):
 
 
 @fortran_class
+class InteractingDarkEnergy(DarkEnergyPPF):
+    """
+    Interacting dark energy model (coupled fluid background) with PPF perturbations.
+    """
+
+    _fortran_class_module_ = "DarkEnergyIDE"
+    _fortran_class_name_ = "TInteractingDarkEnergy"
+    _fields_ = (
+        ("c_Gamma_ppf", c_double),
+        ("w1", c_double, "CPL w1 parameter"),
+        ("beta", c_double, "interaction strength"),
+        ("q_form", c_int, "interaction form: 1=H*rho_de, 2=H*rho_c, 3=H0*rho_de, 4=H0*rho_c"),
+        ("cov_q_form", c_int, "covariant coupling form: 1=u_c, 2=u_de"),
+    )
+
+    def set_params(self, w0=-1.0, w1=0.0, beta=0.0, q_form=1, cov_q_form=1, cs2=1.0):
+        self.w = w0
+        self.wa = w1
+        self.w1 = w1
+        self.beta = beta
+        self.q_form = q_form
+        self.cov_q_form = cov_q_form
+        self.cs2 = cs2
+        self.validate_params()
+        return self
+
+
+@fortran_class
 class AxionEffectiveFluid(DarkEnergyModel):
     """
     Example implementation of a specific (early) dark energy fluid model
@@ -236,4 +264,4 @@ class EarlyQuintessence(Quintessence):
 
 
 # short names for models that support w/wa
-F2003Class._class_names.update({"fluid": DarkEnergyFluid, "ppf": DarkEnergyPPF})
+F2003Class._class_names.update({"fluid": DarkEnergyFluid, "ppf": DarkEnergyPPF, "ide": InteractingDarkEnergy})

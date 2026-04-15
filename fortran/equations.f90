@@ -2200,7 +2200,7 @@
     !  Compute expansion rate from: grho 8*pi*rho*a**2
 
     grhob_t=State%grhob/a
-    grhoc_t=State%grhoc/a
+    call State%CP%DarkEnergy%BackgroundCDMDensity(State%grhoc, a, grhoc_t)
     grhor_t=State%grhornomass/a2
     grhog_t=State%grhog/a2
 
@@ -2862,7 +2862,7 @@
     ! Compute expansion rate from: grho=8*pi*rho*a**2
     ! Also calculate gpres: 8*pi*p*a**2
     grhob_t=State%grhob/a
-    grhoc_t=State%grhoc/a
+    call State%CP%DarkEnergy%BackgroundCDMDensity(State%grhoc, a, grhoc_t)
     grhor_t=State%grhornomass/a2
     grhog_t=State%grhog/a2
     call CP%DarkEnergy%BackgroundDensityAndPressure(State%grhov, a, grhov_t, w_dark_energy_t)

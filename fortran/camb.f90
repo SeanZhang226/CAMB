@@ -239,6 +239,7 @@
     use NonLinear
     use DarkEnergyFluid
     use DarkEnergyPPF
+    use DarkEnergyIDE
     use Quintessence
     use results
 #ifdef COSMOREC
@@ -428,6 +429,8 @@
         allocate (TAxionEffectiveFluid::P%DarkEnergy)
     else if (DarkEneryModel == 'EARLYQUINTESSENCE') then
         allocate (TEarlyQuintessence::P%DarkEnergy)
+    else if (DarkEneryModel == 'IDE' .or. DarkEneryModel == 'INTERACTINGDARKENERGY') then
+        allocate (TInteractingDarkEnergy::P%DarkEnergy)
     else
         ErrMsg = 'Unknown dark energy model: '//trim(DarkEneryModel)
         return

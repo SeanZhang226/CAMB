@@ -807,7 +807,7 @@ class CAMBparams(F2003Class):
         """
         Change the classes used to implement parts of the model.
 
-        :param dark_energy_model: 'fluid', 'ppf', or name of a DarkEnergyModel class
+        :param dark_energy_model: 'fluid', 'ppf', 'ide', or name of a DarkEnergyModel class
         :param initial_power_model: name of an InitialPower class
         :param non_linear_model: name of a NonLinearModel class
         :param recombination_model: name of RecombinationModel class
@@ -844,7 +844,7 @@ class CAMBparams(F2003Class):
         :param use_tabulated_w: whether use interpolated w
         :param wde_a_array: array of scale factors
         :param wde_w_array: array of w(a)
-        :param dark_energy_model: model to use ('fluid' or 'ppf'), default is 'fluid'
+        :param dark_energy_model: model to use ('fluid', 'ppf' or 'ide'), default is 'fluid'
         :return: self
         """
 
@@ -861,7 +861,7 @@ class CAMBparams(F2003Class):
 
         :param a: array of sampled a = 1/(1+z) values
         :param w: array of w(a)
-        :param dark_energy_model:  model to use ('fluid' or 'ppf'), default is 'fluid'
+        :param dark_energy_model:  model to use ('fluid', 'ppf' or 'ide'), default is 'fluid'
         :return: self
         """
         if dark_energy_model == "fluid" and np.any(w < -1):

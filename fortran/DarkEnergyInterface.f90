@@ -11,6 +11,7 @@
         integer :: num_perturb_equations = 0
     contains
     procedure :: Init
+    procedure :: BackgroundCDMDensity
     procedure :: BackgroundDensityAndPressure
     procedure :: PerturbedStressEnergy !Get density perturbation and heat flux for sources
     procedure :: diff_rhopi_Add_Term
@@ -101,6 +102,19 @@
     end if
 
     end subroutine BackgroundDensityAndPressure
+
+    subroutine BackgroundCDMDensity(this, grhoc, a, grhoc_t)
+    class(TDarkEnergyModel), intent(inout) :: this
+    real(dl), intent(in) :: grhoc, a
+    real(dl), intent(out) :: grhoc_t
+
+    if (a > 1e-10_dl) then
+        grhoc_t = grhoc / a
+    else
+        grhoc_t = 0._dl
+    end if
+
+    end subroutine BackgroundCDMDensity
 
     subroutine Effective_w_wa(this, w, wa)
     class(TDarkEnergyModel), intent(inout) :: this
