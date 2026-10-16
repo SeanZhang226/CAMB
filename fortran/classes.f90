@@ -113,6 +113,7 @@
     procedure :: Init => TReionizationModel_Init
     procedure :: x_e => TReionizationModel_xe
     procedure :: get_timesteps => TReionizationModel_get_timesteps
+    procedure :: get_extra_steps => TReionizationModel_get_extra_steps
     end type TReionizationModel
 
     contains
@@ -327,6 +328,15 @@
     z_Complete = 0
 
     end subroutine TReionizationModel_get_timesteps
+
+    subroutine TReionizationModel_get_extra_steps(this, redshifts, samples)
+    class(TReionizationModel) :: this
+    real(dl), allocatable, intent(out) :: redshifts(:, :)
+    integer, allocatable, intent(out) :: samples(:)
+
+    allocate(redshifts(2, 0), samples(0))
+
+    end subroutine TReionizationModel_get_extra_steps
 
     subroutine TReionizationModel_Init(this, State)
     class(TReionizationModel) :: this

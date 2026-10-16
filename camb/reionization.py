@@ -1,6 +1,8 @@
-from ctypes import POINTER, byref, c_bool, c_double, c_void_p
+from ctypes import POINTER, byref, c_bool, c_double, c_int, c_void_p
 
-from .baseconfig import F2003Class, f_pointer, fortran_class
+import numpy as np
+
+from .baseconfig import F2003Class, f_pointer, fortran_class, numpy_1d
 
 
 class ReionizationModel(F2003Class):
@@ -202,3 +204,171 @@ class ExpReionization(BaseTauWithHeReionization):
     def write_ini(self, state) -> None:
         super().write_ini(state)
         state.write_fields(self, names=("reion_redshift_complete", "reion_exp_power", "reion_exp_smooth_width"))
+
+
+@fortran_class
+class TabulatedReionization(BaseTauWithHeReionization):
+    """External, homogeneous post-recombination ionization histories.
+
+    ``ionization`` tables specify the H/first-He reionization contribution in
+    electrons per hydrogen nucleus, excluding the neutral-region residual.
+    ``ionized_fraction`` tables specify its normalized effective fraction.
+    ``total_xe`` tables specify the total electron abundance, including residuals.
+    These are distinct physical inputs, not interchangeable parameter names.
+
+    The interpolation is range-preserving and C2. No global monotonicity or
+    redshift-50 cutoff is imposed. This does not solve an ionization/heating
+    model, modify recombination, or represent spatially patchy reionization.
+    """
+
+    _fields_ = (
+        ("z_start", c_double, "High-redshift end including the explicit connection region"),
+        ("z_complete", c_double, "Lowest tabulated redshift; not necessarily physical completion"),
+        ("transition_width", c_double, "Explicit high-redshift connection width"),
+        ("boundary_tolerance", c_double, "Maximum negligible endpoint contribution for automatic connection"),
+        ("_history_mode", c_int),
+        ("n_nodes", c_int, "Number of input history nodes"),
+        ("min_steps", c_int, "Minimum source-time samples; not a thermodynamics accuracy guarantee"),
+        ("source_samples_per_interval", c_int, "Additional samples in each resolved varying history interval"),
+    )
+    _fortran_class_name_ = "TTabulatedReionization"
+    _methods_ = (
+        ("SetHistory", [POINTER(c_int), numpy_1d, numpy_1d]),
+        ("GetHistory", [POINTER(c_int), numpy_1d, numpy_1d]),
+    )
+
+    def set_table(
+        self,
+        redshifts,
+        x_e,
+        *,
+        history_mode="ionization",
+        transition_width=None,
+        include_helium_fullreion=None,
+        boundary_tolerance=1e-6,
+    ):
+        """Set a table and its physical interpretation; return this object.
+
+        A zero high-z reionization contribution connects to recombination
+        directly. A negligible nonzero endpoint receives a connection one last
+        node-spacing wide. A significant unfinished endpoint requires an
+        explicit positive ``transition_width``; it is never silently cut off.
+        ``total_xe`` always requires an explicit positive connection width.
+        The table is unchanged inside its specified range. Below it, the first
+        value is held constant; partial late ionization is not forced to unity.
+
+        By default the extra He II -> He III contribution is included for the
+        two reionization-contribution modes, but excluded for ``total_xe``.
+        Physical H/He electron bounds are checked against the actual CAMB YHe
+        during initialization, not against a hard-coded electron ceiling.
+        """
+        from ._tabulated import prepare_table
+
+        modes = {"ionization": 0, "ionized_fraction": 1, "total_xe": 2}
+        if history_mode not in modes:
+            raise ValueError("history_mode must be ionization, ionized_fraction or total_xe")
+        z, values, controls = prepare_table(redshifts, x_e)
+        boundary_tolerance = float(boundary_tolerance)
+        if not np.isfinite(boundary_tolerance) or boundary_tolerance < 0:
+            raise ValueError("boundary_tolerance must be finite and non-negative")
+        if history_mode == "ionized_fraction" and np.any(values > 1):
+            raise ValueError("ionized_fraction must lie between zero and one")
+        if transition_width is None:
+            if history_mode == "total_xe" or values[-1] > boundary_tolerance:
+                raise ValueError(
+                    "The high-redshift history has not been connected to recombination. "
+                    "Extend the table to a neutral endpoint, or explicitly supply a positive "
+                    "transition_width. total_xe requires an explicit connection width."
+                )
+            transition_width = z[-1] - z[-2] if values[-1] > 0 else 0.0
+        transition_width = float(transition_width)
+        if not np.isfinite(transition_width) or transition_width < 0:
+            raise ValueError("transition_width must be finite and non-negative")
+        if transition_width == 0 and (history_mode == "total_xe" or values[-1] != 0):
+            raise ValueError("A nonzero endpoint or total_xe needs a positive transition_width")
+        if not np.isfinite(z[-1] + transition_width):
+            raise ValueError("The connection endpoint must be finite")
+        if include_helium_fullreion is not None and not isinstance(include_helium_fullreion, (bool, np.bool_)):
+            raise TypeError("include_helium_fullreion must be a boolean")
+        self.transition_width = transition_width
+        self.boundary_tolerance = boundary_tolerance
+        self._history_mode = modes[history_mode]
+        self.use_optical_depth = False
+        self.optical_depth = 0
+        self.include_helium_fullreion = (
+            history_mode != "total_xe" if include_helium_fullreion is None else bool(include_helium_fullreion)
+        )
+        self.f_SetHistory(byref(c_int(len(z))), z, np.ascontiguousarray(controls.ravel(order="F")))
+        return self
+
+    def set_function(
+        self,
+        function,
+        z_min,
+        z_max,
+        *,
+        history_mode="ionization",
+        transition_width=None,
+        include_helium_fullreion=None,
+        boundary_tolerance=1e-6,
+        **sampling_options,
+    ):
+        """Sample a function into the same Fortran history; return diagnostics.
+
+        ``atol``, ``rtol``, ``max_dz``, ``breakpoints`` and ``max_nodes`` control
+        sampling. Probe errors refer to function values, not derivatives or C_l.
+        Finite sampling cannot guarantee finding arbitrary unannounced narrow
+        features. Supply breakpoints and resolve their scales with max_dz.
+        No Python callbacks are used in the Fortran calculation.
+        """
+        from ._tabulated import sample_function
+
+        z, values, _, diagnostics = sample_function(function, z_min, z_max, **sampling_options)
+        self.set_table(
+            z,
+            values,
+            history_mode=history_mode,
+            transition_width=transition_width,
+            include_helium_fullreion=include_helium_fullreion,
+            boundary_tolerance=boundary_tolerance,
+        )
+        diagnostics = dict(diagnostics)
+        diagnostics["transition_width"] = self.transition_width
+        diagnostics["history_mode"] = history_mode
+        return diagnostics
+
+    @property
+    def history_mode(self):
+        return ("ionization", "ionized_fraction", "total_xe")[self._history_mode]
+
+    def get_table(self):
+        """Return independent copies of the sampled redshifts and input values.
+
+        These are in the input mode's units, before residual/helium/connection
+        processing. Save the mode and other options alongside these arrays.
+        """
+        if self.n_nodes < 2:
+            raise ValueError("No ionization history has been set")
+        z = np.empty(self.n_nodes)
+        values = np.empty(self.n_nodes)
+        self.f_GetHistory(byref(c_int(self.n_nodes)), z, values)
+        return {"redshifts": z, "x_e": values}
+
+    def set_tau(self, tau):
+        raise ValueError("tau is derived from a tabulated history; tau-to-redshift inversion is not defined")
+
+    def set_zrei(self, zrei):
+        raise ValueError("A general history has no unique zrei; use set_table or set_function")
+
+    def get_zre(self, params, tau=None):
+        raise ValueError("A general history has no unique midpoint; inspect the history explicitly")
+
+    def set_extra_params(self, max_zrei=None):
+        if max_zrei is not None:
+            raise ValueError("max_zrei controls tau inversion, not the range of a tabulated history")
+
+    def write_ini(self, state):
+        raise TypeError("TabulatedReionization is Python-only; .ini cannot serialize its history arrays")
+
+    def __getstate__(self):
+        raise TypeError("Save history arrays and options explicitly; this Fortran history cannot be pickled")

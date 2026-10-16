@@ -56,6 +56,12 @@ jobs:
           gfortran --version
           pip install -e .
 
+      - name: External reionization histories
+        env:
+          OMP_NUM_THREADS: "1"
+        run: |
+          python -m unittest camb.tests.tabulated_interpolation_test camb.tests.tabulated_reionization_test
+
       - name: Run tests
         run: |
           python -c "import camb; print(camb.__version__)"

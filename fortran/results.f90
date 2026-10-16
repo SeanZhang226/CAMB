@@ -1994,7 +1994,7 @@
     real(dl), allocatable :: scale_factors(:), times(:), dt(:)
     ! Thermodynamic sound-speed temporaries.
     real(dl) :: T_reion, denom, yheat, Tg, muinv, cs2_orig, cs2_heat, Tb_orig, xe_HHeI
-    logical :: thermo_use_omp
+    logical :: thermo_use_omp, have_last_reion_opacity
     type(TCubicSpline) :: dotmuSp
     integer ninverse, nlin
     real(dl) dlna, zstar_min, zstar_max
@@ -2102,6 +2102,7 @@
     thomc0 = Compton_CT*CP%TCMB**4
     this%r_drag0 = 3.d0/4.d0*State%grhob/State%grhog
     last_dotmu = 0
+    have_last_reion_opacity = .false.
 
     this%matter_verydom_tau = 0
     a_verydom = CP%Accuracy%AccuracyBoost*CP%Accuracy%TimeSwitchBoost &
@@ -2281,11 +2282,19 @@
             if (CP%Accuracy%AccurateReionization .and. CP%WantDerivedParameters) then
                 this%dotmu(i) = (xe_a(i) - this%xe(i))*State%akthom/a2
 
-                if (last_dotmu /= 0) then
-                    this%actual_opt_depth = this%actual_opt_depth &
-                        - 2._dl*(tau - taus(i - 1))/(1._dl/this%dotmu(i) + 1._dl/last_dotmu)
+                if (have_last_reion_opacity) then
+                    if (last_dotmu*this%dotmu(i) > 0) then
+                        this%actual_opt_depth = this%actual_opt_depth &
+                            - 2._dl*(tau - taus(i - 1))/(1._dl/this%dotmu(i) + 1._dl/last_dotmu)
+                    else
+                        ! General histories can cross the recombination baseline.
+                        ! A harmonic mean is singular for opposite-signed opacities.
+                        this%actual_opt_depth = this%actual_opt_depth &
+                            - 0.5_dl*(tau - taus(i - 1))*(this%dotmu(i) + last_dotmu)
+                    end if
                 end if
                 last_dotmu = this%dotmu(i)
+                have_last_reion_opacity = .true.
             end if
         else
             this%xe(i) = xe_a(i)
@@ -2703,6 +2712,8 @@
     ! Sources
     integer ix, i, nwindow, L_limb
     real(dl) keff, win_end, TimeSampleBoost, delta
+    real(dl), allocatable :: reion_extra_redshifts(:, :)
+    integer, allocatable :: reion_extra_samples(:)
 
     TimeSampleBoost = State%CP%Accuracy%AccuracyBoost*State%CP%Accuracy%TimeStepBoost
     call TimeSteps%Init()
@@ -2776,6 +2787,12 @@
         nri0 = int(State%reion_n_steps*TimeSampleBoost)
         ! Steps while reionization going from zero to maximum
         call TimeSteps%Add(State%reion_tau_start, State%reion_tau_complete, nri0)
+        call State%CP%Reion%get_extra_steps(reion_extra_redshifts, reion_extra_samples)
+        do i = 1, size(reion_extra_samples)
+            call TimeSteps%Add(State%TimeOfz(reion_extra_redshifts(2, i)), &
+                State%TimeOfz(reion_extra_redshifts(1, i)), &
+                max(2, nint(reion_extra_samples(i)*TimeSampleBoost)))
+        end do
     end if
 
     ! Sources

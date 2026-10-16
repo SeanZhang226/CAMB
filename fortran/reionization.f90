@@ -90,7 +90,28 @@
     procedure, nopass :: SelfPointer => TExpReionization_SelfPointer
     end type TExpReionization
 
-    public TBaseTauWithHeReionization, TTanhReionization, TExpReionization
+    type, extends(TBaseTauWithHeReionization) :: TTabulatedReionization
+        real(dl) :: z_start = 0._dl
+        real(dl) :: z_complete = 0._dl
+        real(dl) :: transition_width = 0._dl
+        real(dl) :: boundary_tolerance = 1.e-6_dl
+        integer :: history_mode = 0
+        integer :: n_nodes = 0
+        integer :: min_steps = 200
+        integer :: source_samples_per_interval = 16
+        real(dl), allocatable :: nodes(:), controls(:, :)
+    contains
+    procedure :: Init => TTabulatedReionization_Init
+    procedure :: x_e => TTabulatedReionization_xe
+    procedure :: get_timesteps => TTabulatedReionization_get_timesteps
+    procedure :: get_extra_steps => TTabulatedReionization_get_extra_steps
+    procedure :: SetHistory => TTabulatedReionization_SetHistory
+    procedure :: GetHistory => TTabulatedReionization_GetHistory
+    procedure :: Validate => TTabulatedReionization_Validate
+    procedure, nopass :: SelfPointer => TTabulatedReionization_SelfPointer
+    end type TTabulatedReionization
+
+    public TBaseTauWithHeReionization, TTanhReionization, TExpReionization, TTabulatedReionization
 
     contains
 
@@ -480,5 +501,230 @@
     P => PType
 
     end subroutine TExpReionization_SelfPointer
+
+    subroutine TTabulatedReionization_SetHistory(this, n, z, coefficients)
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    class(TTabulatedReionization) :: this
+    integer, intent(in) :: n
+    real(dl), intent(in) :: z(n), coefficients(6, n - 1)
+
+    if (n < 2) then
+        call GlobalError('TabulatedReionization requires at least two nodes', error_reionization)
+        return
+    end if
+    if (any(.not. ieee_is_finite(z)) .or. any(.not. ieee_is_finite(coefficients))) then
+        call GlobalError('TabulatedReionization requires finite arrays', error_reionization)
+        return
+    end if
+    if (any(z(2:n) <= z(1:n - 1)) .or. z(1) < 0 .or. any(coefficients < 0)) then
+        call GlobalError('TabulatedReionization invalid nodes or electron abundance', error_reionization)
+        return
+    end if
+    this%nodes = z
+    this%controls = coefficients
+    this%n_nodes = n
+    this%z_complete = z(1)
+    this%z_start = z(n) + this%transition_width
+    this%Reionization = .true.
+
+    end subroutine TTabulatedReionization_SetHistory
+
+    subroutine TTabulatedReionization_GetHistory(this, n, z, values)
+    class(TTabulatedReionization) :: this
+    integer, intent(in) :: n
+    real(dl), intent(out) :: z(n), values(n)
+
+    if (.not. allocated(this%nodes)) then
+        call GlobalError('TabulatedReionization is uninitialized', error_reionization)
+        return
+    end if
+    if (n /= size(this%nodes)) then
+        call GlobalError('TabulatedReionization inconsistent table size', error_reionization)
+        return
+    end if
+    z = this%nodes
+    values(1:n - 1) = this%controls(1, :)
+    values(n) = this%controls(6, n - 1)
+
+    end subroutine TTabulatedReionization_GetHistory
+
+    subroutine TTabulatedReionization_Init(this, State)
+    use constants, only: mass_ratio_He_H
+    class(TTabulatedReionization) :: this
+    class(TCAMBdata), target :: State
+    real(dl) capacity
+    logical ok
+
+    ! Do not invoke the tanh/tau initializer: arbitrary histories have no unique
+    ! zrei, and the recombination module is not initialized at this stage.
+    select type (State)
+    class is (CAMBdata)
+        this%State => State
+        this%fHe = State%CP%Yhe/(mass_ratio_He_H*(1._dl - State%CP%Yhe))
+        ok = .true.
+        call this%Validate(ok)
+        if (.not. ok) then
+            call GlobalError('Invalid TabulatedReionization configuration', error_reionization)
+            return
+        end if
+        if (.not. this%Reionization) return
+        this%z_start = this%nodes(this%n_nodes) + this%transition_width
+        if (this%history_mode == 1) then
+            capacity = 1._dl
+        else
+            capacity = 1._dl + this%fHe
+            if (this%history_mode == 2 .and. .not. this%include_helium_fullreion) capacity = 1._dl + 2*this%fHe
+        end if
+        if (maxval(this%controls) > capacity + 1.e-12_dl) &
+            call GlobalError('TabulatedReionization exceeds the H/He electron budget for this YHe', error_reionization)
+    end select
+
+    end subroutine TTabulatedReionization_Init
+
+    function TTabulatedReionization_xe(this, z, tau, xe_recomb) result(xe)
+    class(TTabulatedReionization) :: this
+    real(dl), intent(in) :: z
+    real(dl), intent(in), optional :: tau, xe_recomb
+    real(dl) xe, value, residual, fraction, t, weight, work(6)
+    integer lo, hi, middle, degree
+
+    ! Recombination has been initialized before thermodynamics calls this
+    ! method. Use its value at this z, not CAMB's frozen handoff residual.
+    residual = this%State%CP%Recomb%x_e(1._dl/(1._dl + z))
+    if (z >= this%z_start) then
+        xe = residual + this%SecondHelium_xe(z)
+        return
+    end if
+    if (z <= this%nodes(1)) then
+        value = this%controls(1, 1)
+    else if (z >= this%nodes(this%n_nodes)) then
+        value = this%controls(6, this%n_nodes - 1)
+    else
+        lo = 1
+        hi = this%n_nodes
+        do while (hi - lo > 1)
+            middle = (hi + lo)/2
+            if (z >= this%nodes(middle)) then
+                lo = middle
+            else
+                hi = middle
+            end if
+        end do
+        t = (z - this%nodes(lo))/(this%nodes(lo + 1) - this%nodes(lo))
+        work = this%controls(:, lo)
+        ! de Casteljau preserves the Bernstein convex hull under roundoff.
+        do degree = 5, 1, -1
+            work(1:degree) = (1._dl - t)*work(1:degree) + t*work(2:degree + 1)
+        end do
+        value = work(1)
+    end if
+    weight = 0._dl
+    if (z > this%nodes(this%n_nodes) .and. this%transition_width > 0) then
+        t = (z - this%nodes(this%n_nodes))/this%transition_width
+        weight = t**3*(10._dl - 15._dl*t + 6._dl*t*t)
+    end if
+    if (this%history_mode == 2) then
+        xe = (1._dl - weight)*value + weight*residual
+    else
+        fraction = value
+        if (this%history_mode == 0) fraction = value/(1._dl + this%fHe)
+        fraction = fraction*(1._dl - weight)
+        xe = (1._dl - fraction)*residual + fraction*(1._dl + this%fHe)
+    end if
+    xe = xe + this%SecondHelium_xe(z)
+
+    end function TTabulatedReionization_xe
+
+    subroutine TTabulatedReionization_get_timesteps(this, n_steps, z_start, z_complete)
+    class(TTabulatedReionization) :: this
+    integer, intent(out) :: n_steps
+    real(dl), intent(out) :: z_start, z_complete
+
+    n_steps = max(2, nint(this%min_steps*this%timestep_boost))
+    z_start = this%z_start
+    if (this%include_helium_fullreion) z_start = max(z_start, this%helium_redshiftstart)
+    ! Include low-z continuation and the optional He II -> He III step.
+    z_complete = 0._dl
+
+    end subroutine TTabulatedReionization_get_timesteps
+
+    subroutine TTabulatedReionization_get_extra_steps(this, redshifts, samples)
+    class(TTabulatedReionization) :: this
+    real(dl), allocatable, intent(out) :: redshifts(:, :)
+    integer, allocatable, intent(out) :: samples(:)
+    integer i, n
+
+    allocate(redshifts(2, this%n_nodes + 1), samples(this%n_nodes + 1))
+    n = 0
+    do i = 1, this%n_nodes - 1
+        if (this%controls(6, i) /= this%controls(1, i)) then
+            n = n + 1
+            redshifts(:, n) = this%nodes(i:i + 1)
+            samples(n) = this%source_samples_per_interval
+        end if
+    end do
+    if (this%transition_width > 0) then
+        n = n + 1
+        redshifts(:, n) = [this%nodes(this%n_nodes), this%z_start]
+        samples(n) = 16
+    end if
+    if (this%include_helium_fullreion) then
+        n = n + 1
+        redshifts(:, n) = [max(0._dl, this%helium_redshift - 8*this%helium_delta_redshift), &
+            this%helium_redshiftstart]
+        samples(n) = 80
+    end if
+    redshifts = redshifts(:, :n)
+    samples = samples(:n)
+
+    end subroutine TTabulatedReionization_get_extra_steps
+
+    subroutine TTabulatedReionization_Validate(this, ok)
+    use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
+    class(TTabulatedReionization), intent(in) :: this
+    logical, intent(inout) :: ok
+
+    if (.not. this%Reionization) return
+    if (this%n_nodes < 2 .or. .not. allocated(this%nodes)) ok = .false.
+    if (this%history_mode < 0 .or. this%history_mode > 2) ok = .false.
+    if (this%use_optical_depth .or. this%optical_depth /= 0) ok = .false.
+    if (.not. ieee_is_finite(this%timestep_boost) .or. this%timestep_boost <= 0) ok = .false.
+    if (.not. ieee_is_finite(this%transition_width) .or. this%transition_width < 0) ok = .false.
+    if (allocated(this%nodes)) then
+        if (this%n_nodes /= size(this%nodes)) then
+            ok = .false.
+            return
+        end if
+        if (.not. ieee_is_finite(this%nodes(this%n_nodes) + this%transition_width)) ok = .false.
+        if (this%transition_width == 0 .and. allocated(this%controls)) then
+            if (this%history_mode == 2 .or. this%controls(6, this%n_nodes - 1) /= 0) ok = .false.
+        end if
+    end if
+    if (this%min_steps < 2) ok = .false.
+    if (this%source_samples_per_interval < 2) ok = .false.
+    if (this%include_heating) then
+        if (.not. ieee_is_finite(this%reion_temperature) .or. this%reion_temperature <= 0) ok = .false.
+    end if
+    if (.not. ieee_is_finite(this%boundary_tolerance) .or. this%boundary_tolerance < 0) ok = .false.
+    if (this%include_helium_fullreion) then
+        if (.not. ieee_is_finite(this%helium_redshift)) ok = .false.
+        if (.not. ieee_is_finite(this%helium_redshiftstart)) ok = .false.
+        if (.not. ieee_is_finite(this%helium_delta_redshift) .or. this%helium_delta_redshift <= 0) ok = .false.
+        if (this%helium_redshiftstart <= max(0._dl, &
+            this%helium_redshift - 8*this%helium_delta_redshift)) ok = .false.
+    end if
+
+    end subroutine TTabulatedReionization_Validate
+
+    subroutine TTabulatedReionization_SelfPointer(cptr, P)
+    use iso_c_binding
+    type(c_ptr) :: cptr
+    type(TTabulatedReionization), pointer :: PType
+    class(TPythonInterfacedClass), pointer :: P
+
+    call c_f_pointer(cptr, PType)
+    P => PType
+
+    end subroutine TTabulatedReionization_SelfPointer
 
     end module Reionization

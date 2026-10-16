@@ -1,3 +1,12 @@
+# 本 fork：2.0.5+tabulated.1
+
+- 基于上游 2.0.5，新增表格/函数再电离历史、非单调局部保界 C2 插值和局部源时间采样。
+- 明确区分有效电离分数、主再电离电子丰度、含复合残余的总电子丰度，并检查当前氦丰度下的电子预算。
+- 对高红移未结束的电离尾部要求显式连接；保留部分电离的低红移端点；不设 z=50 硬上限。
+- 修复额外光深积分在历史穿过复合基线时使用异号调和平均的奇异性。
+- 新增数值、物理边界及原生模型对照测试。详见[使用说明](docs/tabulated_reionization.md)
+  和[验证报告](docs/tabulated_validation.md)。不改变上游原生 tanh/exp 的物理定义。
+
 # CAMB v2 Change Summary
 
 This is a high-level summary of important user-facing and result-facing changes

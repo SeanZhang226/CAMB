@@ -7,6 +7,18 @@ CAMB
 :Paper: `arXiv:2607.14854 <https://arxiv.org/abs/2607.14854>`_
 :Changelog: `CHANGELOG.md <CHANGELOG.md>`_
 
+此分支：外部再电离历史
+========================
+
+这是 SeanZhang226 的 CAMB 2.0.5 扩展分支，不是上游官方发行版。
+新增 ``TabulatedReionization``：支持非单调表格、受控采样的 Python 函数，
+以及包含 z > 50 部分电离的历史。输入的归一化电离分数在节点间保持 [0, 1]，
+使用 C2、局部保界插值；必须区分电离分数、每氢核电子数和含复合残余的总丰度。
+
+安装、物理约定与完整示例见 `使用说明 <docs/tabulated_reionization.md>`_；
+数值验收与已知边界见 `验证报告 <docs/tabulated_validation.md>`_。
+原有生产环境不应在未经项目级回归验证前直接切换到本分支。
+
 .. image:: https://img.shields.io/pypi/v/camb.svg?style=flat
    :target: https://pypi.python.org/pypi/camb/
 .. image:: https://img.shields.io/conda/vn/conda-forge/camb.svg
