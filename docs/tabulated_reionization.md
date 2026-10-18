@@ -2,7 +2,7 @@
 
 本分支在上游 CAMB **2.0.5**（基准提交
 `1d1d3d6d09e499291651855d4d8286419030a32b`）上增加
-`camb.reionization.TabulatedReionization`，包版本为 **2.0.5+tabulated.1**。
+`camb.reionization.TabulatedReionization`，包版本为 **2.0.5+tabulated.2**。
 它接受表格或一般 Python 函数描述的、空间均匀的复合后电子历史，不要求历史全局单调，
 也没有人为设置的 `z=30` 或 `z=50` 上限。
 
@@ -146,6 +146,26 @@ np.savez("example_history.npz", redshifts=z, values=q)
 一般历史没有唯一的 `zrei`，`get_zre`、`set_zrei` 和 `set_tau` 会明确报错。
 `tau` 应由历史导出，而不是再给定一个彼此不一致的自由输入。
 
+### 取得 CAMB 实际使用的光深
+
+计算背景或谱之后，`results.get_reionization_optical_depth()` 返回热力学积分中实际累计的再电离光深：
+
+\[
+\tau=\int_0^{z_{\rm start}} \sigma_T\,c\,\frac{n_{\rm H}(z)\,[x_e(z)-x_e^{\rm rec}(z)]}{(1+z)H(z)}\,dz ,
+\]
+
+即**相对复合残余 `x_e^rec` 的额外电子**贡献，包括可选的 He II → He III 步骤。
+这与 Planck 和原生 tanh 模型 `tau` 参数的定义一致（原生 tanh 用 `set_tau(0.055)` 时该函数返回 0.055）。
+它需要 `Accuracy.AccurateReionization` 与 `WantDerivedParameters` 为默认的 True。
+
+注意：若在外部自己积分 `(1+f_He)(1-x_HI)`，通常既不含 He II → He III（约 0.0013），
+也可能使用与 CAMB 不同的 `f_He`；这样得到的数并不是 CAMB 计算谱时实际对应的光深。
+
+```python
+results = camb.get_results(pars)
+tau = results.get_reionization_optical_depth()
+```
+
 ## 示例二：解析函数输入
 
 `set_function` 先在 Python 自适应采样，再使用与表格接口完全相同的 Fortran 表示；
@@ -201,7 +221,7 @@ np.savez("sampled_function_history.npz", **table)
 并检查 Python 和 Fortran 版本以及实际导入路径。例如，具备 Python 3.10+ 和 gfortran 后：
 
 ```sh
-git clone --recurse-submodules --branch codex/tabulated-reionization-v2 https://github.com/SeanZhang226/CAMB.git CAMB-tabulated
+git clone --recurse-submodules --branch physics/add-tabulated-reionization https://github.com/SeanZhang226/CAMB.git CAMB-tabulated
 python3 -m venv ~/.venvs/camb-tabulated-v2
 ~/.venvs/camb-tabulated-v2/bin/python -m pip install -e ./CAMB-tabulated
 ~/.venvs/camb-tabulated-v2/bin/python -c 'import camb; print(camb.__version__, camb.__file__)'
@@ -221,8 +241,17 @@ python3 -m venv ~/.venvs/camb-tabulated-v2
 4. 分别加密输入表、背景网格和源函数时间采样。`min_steps`（默认 200）及
    `timestep_boost` 只约束再电离源函数区间的最少采样，不保证热力学网格或最终谱精度；
    还需检查 `BackgroundTimeStepBoost`、`AccuracyBoost` 等控制的收敛。
-   本分支还在每个有变化的表格区间增加 `source_samples_per_interval` 个源采样（默认 16），
-   并解析显式连接区及可选氦步骤；实际采样数也随 `AccuracyBoost*TimeStepBoost` 增加。
+   本分支还在每个有变化的表格区间增加额外源采样，数目按区间宽度决定：
+
+   \[
+   n_i=\min\Big(N_{\max},\ \max\big(2,\ \lceil \Delta\ln(1+z)_i/\delta\rceil\big)\Big),
+   \]
+
+   其中 `N_max=source_samples_per_interval`（默认 16），`δ=source_min_dlnz`（默认 0.005）。
+   稀疏表的宽区间（例如节点相隔 Δz≈5–10）拿到全部 16 个采样，用来解析节点之间的插值形状；
+   密表的窄区间只拿 2–4 个，避免节点越多、采样越密而无谓变慢。
+   显式连接区和可选氦步骤另有固定采样；所有数目再乘以 `AccuracyBoost*TimeStepBoost`。
+   需要更精细时，提高全局 `TimeStepBoost`，或减小 `source_min_dlnz`、增大 `source_samples_per_interval`。
    这避免只用全局再电离起止区间而漏过局部峰，但不等于任意窄峰都被背景网格解析。
    `boundary_tolerance` 只决定末端连接规则，不用来丢弃小振幅的表内结构。
 5. 比较相同光深但高红移分布不同的历史，检查 EE 至至少 `ell=100` 及相关 TT/TE；
@@ -230,6 +259,30 @@ python3 -m venv ~/.venvs/camb-tabulated-v2
 
 本文不宣称示例的节点数、采样默认值或任何单一红移范围已经达到给定谱精度。
 实际背景/谱验收、精度设置及原生指数模型对照的限制见[验证报告](tabulated_validation.md)。
+
+## 节点要多密：经验规则
+
+节点只负责描述 `x_e(z)` 的形状；它们之间由上面的保界 C2 曲线连接。
+需要的密度由历史中**最快的变化**决定，而不是由红移范围决定。
+`scripts/tabulated_reionization_benchmark.py` 的 `nodes` 部分在固定、充分的源采样下只改变节点密度，
+对 `q=[1-tanh((z-8)/0.7)]/2` 的过渡（电离分数 25%→75% 的宽度约 Δz≈0.77；`ln(1+z)` 等间隔节点，z=0–30）得到：
+
+| `ln(1+z)` 间隔 | z=8 处 Δz | 节点数 | 最大 EE 相对差 | `|Δτ|` |
+| ---: | ---: | ---: | ---: | ---: |
+| 0.02 | 0.18 | 175 | 2.5e-6 | 3e-8 |
+| 0.03 | 0.27 | 118 | 4.7e-5 | 6e-7 |
+| 0.05 | 0.45 | 72 | 5.3e-4 | 7e-6 |
+| 0.10 | 0.90 | 38 | 3.2e-3 | 4e-5 |
+| 0.20 | 1.80 | 20 | 3.9e-2 | 6e-4 |
+
+由此的保守规则：**在电离分数变化最快的区间，节点间隔不超过过渡宽度的约 1/3**，
+插值误差对谱约为 1e-4 量级以下，低于 CAMB 默认精度本身（约 1e-3）。更尖锐的特征要相应加密，
+平坦段可以稀疏。插值误差随间隔下降很快，但并非严格的幂律；对自己的历史，用 2 倍加密对比确认。
+
+速度方面，额外采样按区间宽度分配后，CAMB 运行时间与节点数关系很弱：
+同一条历史用 178、412、754 个节点时，分别约为原生 tanh 的 1.0、1.2、2.1 倍
+（旧的“每区间固定 16 个”分别为 2.4、4.4、8.5 倍），谱精度不变。
+因此在 CAMB 一侧，宁可节点偏密；真正的速度成本通常在产生这张表的外部模型里。
 
 ## 参考资料
 

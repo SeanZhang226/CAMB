@@ -409,6 +409,27 @@
 
     end subroutine CAMBdata_GetSigma8
 
+    subroutine CAMBdata_GetReionizationOpticalDepth(Data, tau, status)
+    ! Optical depth from electrons in excess of the recombination solution, as
+    ! accumulated by the thermodynamics integration (includes any He II -> He III step).
+    type(CAMBdata) :: Data
+    real(dl), intent(out) :: tau
+    integer, intent(out) :: status
+
+    tau = 0
+    status = 0
+    if (.not. Data%ThermoData%HasThermoData) then
+        status = 1
+    else if (Data%CP%Reion%Reionization) then
+        if (.not. (Data%CP%Accuracy%AccurateReionization .and. Data%CP%WantDerivedParameters)) then
+            status = 2
+        else
+            tau = Data%ThermoData%actual_opt_depth
+        end if
+    end if
+
+    end subroutine CAMBdata_GetReionizationOpticalDepth
+
     subroutine CAMBdata_GetSigmaRArray(Data, sigma, R, nR, z_ix, nz, var1, var2)
     type(CAMBdata) :: Data
     integer, intent(in) :: nR, nz

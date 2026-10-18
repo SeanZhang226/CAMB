@@ -229,7 +229,8 @@ class TabulatedReionization(BaseTauWithHeReionization):
         ("_history_mode", c_int),
         ("n_nodes", c_int, "Number of input history nodes"),
         ("min_steps", c_int, "Minimum source-time samples; not a thermodynamics accuracy guarantee"),
-        ("source_samples_per_interval", c_int, "Additional samples in each resolved varying history interval"),
+        ("source_samples_per_interval", c_int, "Maximum additional source samples in each varying history interval"),
+        ("source_min_dlnz", c_double, "Smallest ln(1+z) spacing of those samples, before accuracy boosts"),
     )
     _fortran_class_name_ = "TTabulatedReionization"
     _methods_ = (

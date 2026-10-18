@@ -99,6 +99,9 @@
         integer :: n_nodes = 0
         integer :: min_steps = 200
         integer :: source_samples_per_interval = 16
+        ! Extra source samples are not spaced more finely than this in ln(1+z)
+        ! (before Accuracy boosts), so dense tables are not oversampled.
+        real(dl) :: source_min_dlnz = 0.005_dl
         real(dl), allocatable :: nodes(:), controls(:, :)
     contains
     procedure :: Init => TTabulatedReionization_Init
@@ -660,7 +663,10 @@
         if (this%controls(6, i) /= this%controls(1, i)) then
             n = n + 1
             redshifts(:, n) = this%nodes(i:i + 1)
-            samples(n) = this%source_samples_per_interval
+            ! Wide intervals (sparse tables) get the full count to resolve the
+            ! interpolated shape; narrow intervals of dense tables need only a few.
+            samples(n) = max(2, ceiling(min(real(this%source_samples_per_interval, dl), &
+                log((1._dl + this%nodes(i + 1))/(1._dl + this%nodes(i)))/this%source_min_dlnz)))
         end if
     end do
     if (this%transition_width > 0) then
@@ -702,6 +708,7 @@
     end if
     if (this%min_steps < 2) ok = .false.
     if (this%source_samples_per_interval < 2) ok = .false.
+    if (.not. ieee_is_finite(this%source_min_dlnz) .or. this%source_min_dlnz <= 0) ok = .false.
     if (this%include_heating) then
         if (.not. ieee_is_finite(this%reion_temperature) .or. this%reion_temperature <= 0) ok = .false.
     end if

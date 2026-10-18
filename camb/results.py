@@ -280,6 +280,31 @@ class CAMBdata(F2003Class):
         """
         return dict(zip(model.derived_names, self.ThermoDerivedParams))
 
+    def get_reionization_optical_depth(self):
+        r"""
+        Get the reionization optical depth actually used in the calculation.
+
+        This is the Thomson optical depth from electrons in excess of the recombination
+        solution, integrated on the thermodynamics grid. It includes the optional
+        He II -> He III step and excludes the residual recombination electrons, matching
+        the usual definition of :math:`\tau`. For :class:`~.reionization.TabulatedReionization`
+        it is derived from the history rather than being an input parameter.
+
+        Requires background/thermodynamics to have been calculated (e.g. by
+        :func:`~camb.get_background` or :func:`~camb.get_results`), with
+        ``Accuracy.AccurateReionization`` and ``WantDerivedParameters`` enabled.
+
+        :return: optical depth (zero if reionization is disabled)
+        """
+        tau = c_double(0)
+        status = c_int(0)
+        CAMBdata_GetReionizationOpticalDepth(byref(self), byref(tau), byref(status))
+        if status.value == 1:
+            raise CAMBError("Thermodynamics has not been calculated; call get_background or get_results first")
+        if status.value == 2:
+            raise CAMBError("Reionization optical depth needs AccurateReionization and WantDerivedParameters")
+        return tau.value
+
     def get_background_outputs(self):
         """
         Get BAO values for redshifts set in Params.z_outputs
@@ -1893,6 +1918,9 @@ CAMBdata_GetMatterPower.argtypes = [POINTER(CAMBdata), numpy_2d, d_arg, d_arg, i
 
 CAMBdata_GetSigma8 = camblib.__handles_MOD_cambdata_getsigma8
 CAMBdata_GetSigma8.argtypes = [POINTER(CAMBdata), numpy_1d, int_arg]
+
+CAMBdata_GetReionizationOpticalDepth = camblib.__handles_MOD_cambdata_getreionizationopticaldepth
+CAMBdata_GetReionizationOpticalDepth.argtypes = [POINTER(CAMBdata), POINTER(c_double), POINTER(c_int)]
 
 CAMBdata_GetSigmaRArray = camblib.__handles_MOD_cambdata_getsigmararray
 CAMBdata_GetSigmaRArray.argtypes = [

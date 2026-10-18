@@ -155,6 +155,38 @@ class TabulatedReionizationTest(unittest.TestCase):
         self.assertTrue(np.all(np.isfinite(list(result.get_derived_params().values()))))
         self.assertGreater(integrated_tau(result), 0)
 
+    def test_reionization_optical_depth_matches_definition(self):
+        p = parameters()
+        p.Reion.Reionization = False
+        baseline_tau = integrated_tau(camb.get_background(p))
+        p.Reion = TabulatedReionization().set_table(
+            [0, 6, 8, 10, 14, 20], [1, 1, 0.5, 0.15, 0, 0], history_mode="ionized_fraction"
+        )
+        result = camb.get_background(p)
+        # Excess over the recombination solution, including the He II -> He III step.
+        expected = integrated_tau(result) - baseline_tau
+        self.assertAlmostEqual(result.get_reionization_optical_depth(), expected, delta=2e-5 * expected)
+        p.Reion = camb.reionization.TanhReionization()
+        p.Reion.set_tau(0.055)
+        self.assertAlmostEqual(camb.get_background(p).get_reionization_optical_depth(), 0.055, delta=1e-4)
+        with self.assertRaises(camb.CAMBError):
+            camb.CAMBdata().get_reionization_optical_depth()
+
+    def test_dense_table_width_aware_sampling_matches_full_sampling(self):
+        # Narrow intervals of a dense table get only a few extra source samples;
+        # the spectra must agree with sampling every interval at the full count.
+        p = parameters()
+        p.Reion = TabulatedReionization()
+        report = p.Reion.set_function(
+            lambda z: 0.5 * (1 - np.tanh((z - 8) / 0.7)), 0, 30, history_mode="ionized_fraction", max_dz=0.05
+        )
+        self.assertGreater(report["n_nodes"], 500)
+        default = camb.get_results(p).get_unlensed_scalar_cls(lmax=100, CMB_unit="muK", raw_cl=True)
+        p.Reion.source_min_dlnz = 1e-12
+        full = camb.get_results(p).get_unlensed_scalar_cls(lmax=100, CMB_unit="muK", raw_cl=True)
+        for error in spectrum_errors(default, full).values():
+            self.assertLess(error, 1e-3)
+
     def test_api_rejects_ambiguous_inversion_and_bad_flags(self):
         model = TabulatedReionization()
         with self.assertRaises(ValueError):
@@ -186,6 +218,10 @@ class TabulatedReionizationTest(unittest.TestCase):
         with self.assertRaises(camb.CAMBError):
             camb.get_background(p)
         p.Reion.source_samples_per_interval = 16
+        p.Reion.source_min_dlnz = 0
+        with self.assertRaises(camb.CAMBError):
+            camb.get_background(p)
+        p.Reion.source_min_dlnz = 0.005
         p.Reion.helium_redshiftstart = 0
         with self.assertRaises(camb.CAMBError):
             camb.get_background(p)

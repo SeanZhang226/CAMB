@@ -1,3 +1,13 @@
+# 本 fork：2.0.5+tabulated.2
+
+- 额外源时间采样按区间宽度分配：`min(source_samples_per_interval, max(2, ceil(Δln(1+z)/source_min_dlnz)))`，
+  新参数 `source_min_dlnz` 默认 0.005。稀疏表结果不变；密表（数百节点）CAMB 运行时间降为原来的 1/2.4–1/4，
+  谱精度保持在原生 tanh 的默认精度水平。
+- 新增 `CAMBdata.get_reionization_optical_depth()`：返回热力学积分实际累计的再电离光深
+  （相对复合残余的额外电子，含 He II → He III），与原生 `tau` 参数定义一致。
+- 新增 `scripts/tabulated_reionization_benchmark.py`（节点密度、速度、稀疏表、光深四部分），
+  文档补充节点密度经验规则与 tabulated.2 验证结果；修正安装说明中已不存在的分支名。
+
 # 本 fork：2.0.5+tabulated.1
 
 - 基于上游 2.0.5，新增表格/函数再电离历史、非单调局部保界 C2 插值和局部源时间采样。
